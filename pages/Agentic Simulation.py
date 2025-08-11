@@ -358,16 +358,16 @@ st.sidebar.markdown("---")
 st.sidebar.header("Agentic Framework")
 st.sidebar.markdown("""
 - **Demand Forecast Agent:** Predicts demand to optimize inventory.
-- **Procurement Agent:** Manages sourcing, orders, and supplier risk.<br>
+- **Procurement Agent:** Manages sourcing, orders, and supplier risk.
 - **Logistics Agent:** Optimizes shipping and delivery routes.
 - **Human:** Steps in for unprecedented, "black swan" events.
 """)
 
 st.header("Simulation Dashboard")
 
-# --- Performance Metrics ---
+# --- Performance Metrics (Updated for better display) ---
 df_metrics = pd.DataFrame(st.session_state.kpis)
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric(label="On-Time Delivery Rate", value=f"{df_metrics['on_time_delivery_rate'].iloc[-1]:.2f}%")
 with col2:
@@ -375,21 +375,42 @@ with col2:
 with col3:
     st.metric(label="Inventory Days", value=f"{df_metrics['inventory_days_of_supply'].iloc[-1]:.2f} days")
 with col4:
-    st.metric(label="Risk Exposure Score", value=f"{df_metrics['risk_exposure_score'].iloc[-1]:.2f}")
-with col5:
-    st.metric(label="Active Agent Boost", value=st.session_state.agent_boost if st.session_state.agent_boost else "None")
-
+    # Use a different display for Active Agent Boost to prevent text cutoff
+    st.markdown(f"**Active Agent Boost** <br> {st.session_state.agent_boost if st.session_state.agent_boost else 'None'}")
+    
 st.markdown("---")
 
 st.subheader("Agent & Event Log")
 
 # --- Central Log (Scrollable Container with DataFrame) ---
+# Inject custom CSS to allow text wrapping in the dataframe
+st.markdown("""
+<style>
+.stDataFrame table {
+    table-layout: fixed;
+    width: 100%;
+}
+.stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) {
+    word-wrap: break-word;
+    white-space: normal;
+    width: 60%; /* Give more space to the message column */
+}
+.stDataFrame th:nth-child(1), .stDataFrame td:nth-child(1) {
+    width: 5%;
+}
+.stDataFrame th:nth-child(2), .stDataFrame td:nth-child(2) {
+    width: 15%;
+}
+.stDataFrame th:nth-child(3), .stDataFrame td:nth-child(3) {
+    width: 15%;
+}
+</style>
+""", unsafe_allow_html=True)
+
 log_container = st.container(height=300)
 with log_container:
-    # Check if the log is not empty before attempting to create the DataFrame
     if len(st.session_state.simulation_log) > 0:
         df_log = pd.DataFrame(st.session_state.simulation_log)
-        # Sort by day in descending order to show latest logs first
         st.dataframe(df_log.sort_values(by='day', ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Simulation log is currently empty.")
