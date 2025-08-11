@@ -1,4 +1,4 @@
-import streamlit as st
+ximport streamlit as st
 import pandas as pd
 import random
 import plotly.express as px
@@ -23,13 +23,20 @@ def initialize_state():
             'inventory_days_of_supply': [30.0],
             'risk_exposure_score': [10.0],
         }
+    if 'latest_kpi_values' not in st.session_state:
+        # This will hold the current, most up-to-date KPI values
+        st.session_state.latest_kpi_values = {
+            'on_time_delivery_rate': 90.0,
+            'supply_chain_cost': 1000.0,
+            'inventory_days_of_supply': 30.0,
+            'risk_exposure_score': 10.0,
+        }
     if 'day' not in st.session_state:
         st.session_state.day = 0
     if 'simulation_running' not in st.session_state:
         st.session_state.simulation_running = False
     if 'message_bus' not in st.session_state:
         st.session_state.message_bus = {}
-    # FIX: Corrected the syntax error in this line
     if 'agent_states' not in st.session_state:
         st.session_state.agent_states = {
             'demand_forecast': {'current_forecast': 100},
@@ -139,18 +146,20 @@ def advance_day():
             add_log("System", f"{st.session_state.agent_boost} has expired.", 'info')
             st.session_state.agent_boost = None
 
-    current_on_time = st.session_state.kpis['on_time_delivery_rate'][-1] + on_time_change
-    current_cost = st.session_state.kpis['supply_chain_cost'][-1] + cost_change
-    current_inventory = st.session_state.kpis['inventory_days_of_supply'][-1] + inventory_change
-    current_risk = st.session_state.kpis['risk_exposure_score'][-1] + risk_change
+    # Update the latest KPI values for the metric display
+    st.session_state.latest_kpi_values['on_time_delivery_rate'] = min(100, max(0, st.session_state.latest_kpi_values['on_time_delivery_rate'] + on_time_change))
+    st.session_state.latest_kpi_values['supply_chain_cost'] = max(0, st.session_state.latest_kpi_values['supply_chain_cost'] + cost_change)
+    st.session_state.latest_kpi_values['inventory_days_of_supply'] = max(0, st.session_state.latest_kpi_values['inventory_days_of_supply'] + inventory_change)
+    st.session_state.latest_kpi_values['risk_exposure_score'] = min(100, max(0, st.session_state.latest_kpi_values['risk_exposure_score'] + risk_change))
     
-    st.session_state.kpis['day'].append(st.session_state.day)
-    st.session_state.kpis['on_time_delivery_rate'].append(min(100, max(0, current_on_time)))
-    st.session_state.kpis['supply_chain_cost'].append(max(0, current_cost))
-    st.session_state.kpis['inventory_days_of_supply'].append(max(0, current_inventory))
-    st.session_state.kpis['risk_exposure_score'].append(min(100, max(0, current_risk)))
-
-    add_log("System", f"Day {st.session_state.day}: KPI changes calculated.", 'info')
+    # Only append the data to the graph's dataset every 5 days
+    if st.session_state.day % 5 == 0:
+        st.session_state.kpis['day'].append(st.session_state.day)
+        st.session_state.kpis['on_time_delivery_rate'].append(st.session_state.latest_kpi_values['on_time_delivery_rate'])
+        st.session_state.kpis['supply_chain_cost'].append(st.session_state.latest_kpi_values['supply_chain_cost'])
+        st.session_state.kpis['inventory_days_of_supply'].append(st.session_state.latest_kpi_values['inventory_days_of_supply'])
+        st.session_state.kpis['risk_exposure_score'].append(st.session_state.latest_kpi_values['risk_exposure_score'])
+        add_log("System", f"Day {st.session_state.day}: KPI changes logged to graph.", 'info')
 
 def run_agents():
     """Orchestrates agent interactions for the current day."""
@@ -215,7 +224,7 @@ def run_procurement_agent():
         if event_name in ['Supplier Delay', 'Labor Strike']:
             add_log("ProcurementAgent", f"Received alert: {event_name}. Searching for alternative suppliers and pre-ordering materials.", 'warning')
             
-            if random.random() < (100 - st.session_state.kpis['risk_exposure_score'][-1]) / 100.0:
+            if random.random() < (100 - st.session_state.latest_kpi_values['risk_exposure_score']) / 100.0:
                 learning_bonus = st.session_state.agent_states['learning'].get(event_name, 0) * 0.5
                 boost_multiplier = 1
                 if st.session_state.agent_boost == "Procurement Boost":
@@ -279,8 +288,8 @@ def stop_simulation():
 
 def human_intervene():
     """Action for human intervention button. Applies a large fix and resets the state."""
-    st.session_state.kpis['on_time_delivery_rate'][-1] += 50
-    st.session_state.kpis['supply_chain_cost'][-1] -= 300
+    st.session_state.latest_kpi_values['on_time_delivery_rate'] += 50
+    st.session_state.latest_kpi_values['supply_chain_cost'] -= 300
     st.session_state.human_intervention_needed = False
     st.session_state.simulation_running = False
     add_log("Human", "Intervened to solve the black swan event. The supply chain is recovering.", 'success')
@@ -329,8 +338,7 @@ st.sidebar.markdown("""
 st.header("Simulation Dashboard")
 
 # --- Performance Metrics and Graph Display ---
-df_metrics = pd.DataFrame(st.session_state.kpis)
-latest_kpis = df_metrics.iloc[-1]
+latest_kpis = st.session_state.latest_kpi_values
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -389,7 +397,8 @@ st.markdown("---")
 
 st.subheader("Performance Trends Over Time")
 
-# --- The Chart Display Logic (Always renders from the latest data) ---
+# --- The Chart Display Logic ---
+df_metrics = pd.DataFrame(st.session_state.kpis)
 fig_metrics = px.line(df_metrics, x='day', y=list(df_metrics.columns[1:]),
                       title='Supply Chain KPIs Over Time', markers=True)
 fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
