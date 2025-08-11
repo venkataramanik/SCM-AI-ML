@@ -29,6 +29,15 @@ st.write("""
 The **ARIMA** (AutoRegressive Integrated Moving Average) model is a powerful statistical tool for time-series forecasting. It uses historical data to identify and model the patterns of a time series, enabling accurate predictions of future values based on past behavior.
 """)
 
+# -- Industry Applicability Section --
+st.subheader("Industry Applicability")
+st.write("""
+ARIMA is particularly well-suited for forecasting scenarios where historical data exhibits clear patterns over time.
+- **Retail & Inventory Management:** Predicting sales for stable, long-running products that have consistent seasonal demand (e.g., winter coats, holiday decorations).
+- **Utilities & Energy:** Forecasting energy consumption to help manage power grids, as usage often follows daily, weekly, and yearly cycles.
+- **Finance:** Forecasting stock prices or other financial indicators to inform trading strategies, as these often have auto-regressive properties.
+""")
+
 # -- Tools Used Section --
 st.subheader("Tools Used")
 st.write("""
