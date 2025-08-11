@@ -391,22 +391,22 @@ with log_container:
         message = log_entry['message']
         level = log_entry['level']
         
-        # Determine a simple text avatar based on the agent name
-        avatar_text = ""
+        # Determine a simple text avatar URL based on the agent name
+        avatar_url = ""
         if agent == "System":
-            avatar_text = "System"
+            avatar_url = "https://placehold.co/40x40/dddddd/000000?text=SYS"
         elif agent == "Human":
-            avatar_text = "Human"
+            avatar_url = "https://placehold.co/40x40/3366ff/ffffff?text=HUM"
         elif agent == "DemandForecastAgent":
-            avatar_text = "Demand"
+            avatar_url = "https://placehold.co/40x40/4CAF50/ffffff?text=DF"
         elif agent == "ProcurementAgent":
-            avatar_text = "Procurement"
+            avatar_url = "https://placehold.co/40x40/FFC107/000000?text=PRO"
         elif agent == "LogisticsAgent":
-            avatar_text = "Logistics"
+            avatar_url = "https://placehold.co/40x40/FF5722/ffffff?text=LOG"
         else:
-            avatar_text = "Unknown"
+            avatar_url = "https://placehold.co/40x40/f44336/ffffff?text=UNK"
 
-        with st.chat_message(name=agent, avatar=avatar_text):
+        with st.chat_message(name=agent, avatar=avatar_url):
             if level == "warning":
                 st.warning(message)
             elif level == "error":
