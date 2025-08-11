@@ -19,7 +19,7 @@ In the real world, demand and lead times are rarely certain. Relying on determin
 # -- The Concept: Stochastic Optimization --
 st.subheader("The Concept: Stochastic Optimization")
 st.write("""
-This project uses **Monte Carlo simulation** to model an inventory system over many scenarios. Instead of a single value, we use a **probability distribution** for demand. The model then helps find an optimal inventory policy (e.g., safety stock) that minimizes total costs on average.
+This project uses a **Monte Carlo simulation** to model an inventory system over many scenarios. Instead of a single value, we use a **probability distribution** for demand. The model then helps find an optimal inventory policy (e.g., safety stock) that minimizes total costs on average.
 """)
 
 # -- Tools Used Section --
@@ -61,21 +61,21 @@ def run_simulation(safety_stock, simulation_id):
     
     return total_cost, simulation_data
 
-# Use a button to get new random data
-if st.button("Run New Simulation"):
-    st.session_state['simulation_id'] = np.random.randint(0, 1000000)
-
-if 'simulation_id' not in st.session_state:
-    st.session_state['simulation_id'] = 42 # Default seed
+if "simulation_id" not in st.session_state:
+    st.session_state.simulation_id = np.random.randint(0, 1_000_000)
 
 st.subheader("Interactive Stochastic Analysis")
 st.info("Adjust the safety stock to see its effect on total costs and inventory levels over one year of uncertain demand.")
 
 safety_stock = st.slider("Safety Stock Level", min_value=0, max_value=200, value=50)
 
-total_cost, simulation_data = run_simulation(safety_stock, st.session_state['simulation_id'])
+total_cost, simulation_data = run_simulation(safety_stock, st.session_state.simulation_id)
 
 st.metric(label="Total Simulated Cost Over 1 Year", value=f"${total_cost:,.2f}")
+
+if st.button("Run New Simulation"):
+    st.session_state.simulation_id = np.random.randint(0, 1_000_000)
+    st.experimental_rerun()
 
 fig, ax = plt.subplots(figsize=(10, 6))
 ax.plot(simulation_data['End of Day Inventory'])
