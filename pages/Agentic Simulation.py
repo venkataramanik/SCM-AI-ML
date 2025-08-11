@@ -29,7 +29,8 @@ def initialize_state():
         st.session_state.simulation_running = False
     if 'message_bus' not in st.session_state:
         st.session_state.message_bus = {}
-    if 'agent_states' not in st.session_session_states' not in st.session_state:
+    # FIX: Corrected the syntax error in this line
+    if 'agent_states' not in st.session_state:
         st.session_state.agent_states = {
             'demand_forecast': {'current_forecast': 100},
             'procurement': {'pending_orders': []},
@@ -146,7 +147,6 @@ def advance_day():
     st.session_state.kpis['day'].append(st.session_state.day)
     st.session_state.kpis['on_time_delivery_rate'].append(min(100, max(0, current_on_time)))
     st.session_state.kpis['supply_chain_cost'].append(max(0, current_cost))
-    # FIX: Removed the extra closing parenthesis here.
     st.session_state.kpis['inventory_days_of_supply'].append(max(0, current_inventory))
     st.session_state.kpis['risk_exposure_score'].append(min(100, max(0, current_risk)))
 
