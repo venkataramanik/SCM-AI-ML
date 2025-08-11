@@ -8,7 +8,7 @@ This portfolio is a hands-on demonstration of my expertise in applying data-driv
 
 ### **About Me**
 
-I'm Venkat Krishnan, a Digital Innovation & Architecture leader with over two decades of global experience.My career has focused on helping clients across logistics, automotive, CPG, and retail translate technology into tangible business value[cite: 76]. [cite\_start]I specialize in shaping enterprise architecture, driving supply chain modernization, and building scalable platforms that deliver measurable outcomes[cite: 78, 81, 84]. This portfolio is a practical extension of my work, exploring how predictive analytics and intelligent systems can optimize core SCM functions.
+I'm Venkat Krishnan, a Digital Innovation & Architecture leader with over two decades of global experience.My career has focused on helping clients across logistics, automotive, CPG, and retail translate technology into tangible business value[cite: 76]. [cite\_start]I specialize in shaping enterprise architecture, driving supply chain modernization, and building scalable platforms that deliver measurable outcomes. This portfolio is a practical extension of my work, exploring how predictive analytics and intelligent systems can optimize core SCM functions.
 
 -----
 
