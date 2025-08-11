@@ -23,6 +23,8 @@ st.subheader("Simulated Time Series Data")
 st.write("""
 For this project, we've simulated a time-series dataset that mimics real sales data with an upward trend and a clear seasonal pattern, making it a much better fit for an ARIMA model.
 """)
+# -- Concept Explanation --
+st.subheader("AutoRegressive Integrated Moving Average (ARIMA)")
 
 # -- ARIMA Model Explanation --
 st.write("""
