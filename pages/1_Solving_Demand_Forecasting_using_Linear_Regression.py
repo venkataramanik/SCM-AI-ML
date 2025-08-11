@@ -23,11 +23,11 @@ In a supply chain, accurate demand forecasting is the bedrock of operational eff
 # -- The Concept: Simulated Data --
 st.subheader("Simulated Data for Our Playground")
 st.write("""
-I used a simulated dataset to demonstrate the core concept.
+Instead of using public data, this project uses a simulated dataset to demonstrate the core concept.
 """)
 
-# -- Concept Explanation Section --
-st.subheader("Supervised Learning & Linear Regression")
+# -- Concept Explanation --
+st.subheader("The Concept: Supervised Learning & Linear Regression")
 st.write("""
 This project uses **Supervised Learning**, a type of machine learning where we train a model on a labeled dataset. We give the model both the input (Units Sold) and the correct output (Total Revenue). The model's job is to learn the relationship between these two variables.
 
@@ -41,6 +41,17 @@ st.write("""
 - **Numpy** for data simulation.
 - **Scikit-learn** for building the machine learning model.
 - **Matplotlib** for data visualization.
+""")
+
+# -- Industry Applicability Section --
+st.subheader("Specific Industry Applicability")
+st.write("""
+Supervised learning forecasting is a foundational tool for a wide range of industries, helping to solve specific problems:
+
+- **Retail & E-commerce:** For non-perishable items like basic apparel, consumer electronics, or home goods.
+- **Manufacturing:** For components and raw materials such as automotive parts, industrial chemicals, or electronic components.
+- **Logistics & Transportation:** For forecasting volume for predictable items like standard packages and freight.
+- **Fast-Moving Consumer Goods (FMCG):** For products with stable consumption, such as packaged foods and household supplies.
 """)
 
 # -- Code and Model Demonstration --
@@ -63,7 +74,6 @@ def generate_and_train_model():
 
 model, X, y, df = generate_and_train_model()
 
-# -- Display the Raw Data --
 st.subheader("Raw Simulated Data")
 st.write("The table below shows the data our model was trained on. Each row represents a sales record with Units Sold and its corresponding Total Revenue.")
 st.dataframe(df.head(10))
