@@ -39,24 +39,24 @@ if 'agent_states' not in st.session_state:
 
 # --- Constants ---
 # KPI decay/growth rates without agent intervention
-ON_TIME_DECAY_RATE = -0.5
-COST_GROWTH_RATE = 20
-INVENTORY_GROWTH_RATE = 1.0
-RISK_GROWTH_RATE = 1.0
+ON_TIME_DECAY_RATE = -0.2 # Adjusted to be more gradual
+COST_GROWTH_RATE = 15 # Adjusted
+INVENTORY_GROWTH_RATE = 0.5 # Adjusted
+RISK_GROWTH_RATE = 0.5 # Adjusted
 
 # Agentic framework's impact on KPIs (now more dynamic and message-driven)
 AGENT_IMPACTS = {
-    'demand_forecast': {'on_time': (1.0, 3.0), 'cost': (-20.0, -10.0), 'inventory': (-3.0, -1.0)},
-    'procurement': {'on_time': (4.0, 6.0), 'cost': (-25.0, -15.0), 'risk': (-6.0, -4.0)},
-    'logistics': {'on_time': (4.0, 6.0), 'cost': (-15.0, -5.0), 'inventory': (-2.0, 0.0)},
+    'demand_forecast': {'on_time': (2.0, 4.0), 'cost': (-25.0, -15.0), 'inventory': (-4.0, -2.0)},
+    'procurement': {'on_time': (5.0, 8.0), 'cost': (-30.0, -20.0), 'risk': (-8.0, -5.0)},
+    'logistics': {'on_time': (5.0, 8.0), 'cost': (-20.0, -10.0), 'inventory': (-3.0, 0.0)},
 }
 
 # Market Events (simulating real-world disruptions)
 MARKET_EVENTS = [
-    {'name': 'Supplier Delay', 'impact': {'on_time': -15, 'cost': 100, 'risk': 5}, 'chance': 0.15, 'trigger': 'procurement'},
-    {'name': 'Unexpected Demand Spike', 'impact': {'on_time': -10, 'cost': 50, 'inventory': 5}, 'chance': 0.1, 'trigger': 'demand_forecast'},
-    {'name': 'Logistics Network Congestion', 'impact': {'on_time': -12, 'cost': 30}, 'chance': 0.15, 'trigger': 'logistics'},
-    {'name': 'Geopolitical Event', 'impact': {'on_time': -20, 'cost': 150, 'risk': 20}, 'chance': 0.05, 'trigger': 'procurement'},
+    {'name': 'Supplier Delay', 'impact': {'on_time': -10, 'cost': 80, 'risk': 4}, 'chance': 0.1, 'trigger': 'procurement'}, # Impact reduced, chance reduced
+    {'name': 'Unexpected Demand Spike', 'impact': {'on_time': -8, 'cost': 40, 'inventory': 5}, 'chance': 0.1, 'trigger': 'demand_forecast'}, # Impact reduced
+    {'name': 'Logistics Network Congestion', 'impact': {'on_time': -10, 'cost': 25}, 'chance': 0.15, 'trigger': 'logistics'}, # Impact reduced
+    {'name': 'Geopolitical Event', 'impact': {'on_time': -15, 'cost': 120, 'risk': 15}, 'chance': 0.03, 'trigger': 'procurement'}, # Impact reduced, chance reduced
 ]
 
 # --- Helper Functions ---
@@ -232,7 +232,7 @@ def stop_simulation():
 def reset_simulation():
     """Resets all simulation state to its initial values."""
     st.session_state.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 # --- UI Layout ---
 st.title("🤖 Advanced Agentic Supply Chain Simulation")
@@ -286,4 +286,4 @@ else:
 if st.session_state.simulation_running:
     time.sleep(1) # Simulates a day passing every second
     advance_day()
-    st.rerun() # Using st.rerun() instead of the deprecated st.experimental_rerun()
+    st.rerun()
