@@ -418,15 +418,29 @@ st.markdown("---")
 
 st.subheader("Performance Trends Over Time")
 
-# --- Charts ---
-df_metrics = pd.DataFrame(st.session_state.kpis)
-fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
-                      title='Supply Chain KPIs Over Time', markers=True)
-fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
-st.plotly_chart(fig_metrics, use_container_width=True)
+# --- The Simulation Loop with real-time chart updates ---
+# Create a placeholder for the chart
+chart_placeholder = st.empty()
 
-# --- The Simulation Loop ---
 if st.session_state.simulation_running:
+    # This block will now handle both the simulation logic and the chart update
     time.sleep(1) # Simulates a day passing every second
     advance_day()
+    
+    df_metrics = pd.DataFrame(st.session_state.kpis)
+    fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
+                          title='Supply Chain KPIs Over Time', markers=True)
+    fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
+    
+    # Update the chart placeholder
+    chart_placeholder.plotly_chart(fig_metrics, use_container_width=True)
+
+    # Rerun the script to continue the loop
     st.rerun()
+else:
+    # When not running, display the final or initial chart
+    df_metrics = pd.DataFrame(st.session_state.kpis)
+    fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
+                          title='Supply Chain KPIs Over Time', markers=True)
+    fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
+    chart_placeholder.plotly_chart(fig_metrics, use_container_width=True)
