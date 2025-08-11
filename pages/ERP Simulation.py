@@ -158,7 +158,7 @@ st.sidebar.button("🔄 Reset Simulation", on_click=reset_simulation)
 st.sidebar.markdown("---")
 
 st.header("Control Panel")
-st.button("⏩ Run Agentic Day", on_on_click=run_simulation_day)
+st.button("⏩ Run Agentic Day", on_click=run_simulation_day)
 st.markdown("---")
 
 # --- Dashboard Metrics ---
