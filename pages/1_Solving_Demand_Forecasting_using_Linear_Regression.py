@@ -22,12 +22,11 @@ In a supply chain, accurate demand forecasting is the bedrock of operational eff
 
 # -- The Concept: Simulated Data --
 st.subheader("Simulated Data for Our Playground")
-st.write("""
-Instead of using public data, this project uses a simulated dataset to demonstrate the core concept.
+st.write("""Uses a simulated dataset to demonstrate the core concept.
 """)
 
 # -- Concept Explanation --
-st.subheader("The Concept: Supervised Learning & Linear Regression")
+st.subheader("Supervised Learning & Linear Regression")
 st.write("""
 This project uses **Supervised Learning**, a type of machine learning where we train a model on a labeled dataset. We give the model both the input (Units Sold) and the correct output (Total Revenue). The model's job is to learn the relationship between these two variables.
 
