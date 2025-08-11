@@ -8,7 +8,6 @@ import time
 # --- Configuration ---
 st.set_page_config(
     page_title="Advanced Agentic SCM Simulation",
-    page_icon="🤖",
     layout="wide",
 )
 
@@ -326,20 +325,20 @@ def human_intervene():
 def reset_simulation():
     """Resets all simulation state to its initial values."""
     st.session_state.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 # --- UI Layout ---
-st.title("🤖 Advanced Agentic Supply Chain Simulation")
+st.title("Advanced Agentic Supply Chain Simulation")
 st.markdown("This simulation models an **Agentic Framework** with autonomous, interacting agents. They work proactively to manage key KPIs and react to dynamic market events.")
 st.markdown("---")
 st.markdown("""
-### 🚀 The Agent Boost Mechanism
+### The Agent Boost Mechanism
 
 The **Agent Boost** is a special, temporary state that enhances an agent's ability to respond to a supply chain disruption. In this simulation, a boost event (either a **Procurement Boost** or a **Logistics Boost**) has a small chance of being randomly triggered and will last for a few days. When a boosted agent successfully mitigates a market event during this time, its positive impact on the key performance indicators (KPIs) is significantly multiplied. This simulates a temporary improvement in an agent's efficiency or access to better resources.
 
-### 🏃 How to Run the Simulation
+### How to Run the Simulation
 
-To start, simply click the **▶️ Start Simulation** button in the control panel on the left. The simulation will advance one "day" at a time, with agents taking action and events potentially occurring. You can observe the performance trends over time and the detailed agent logs below. If a catastrophic event occurs, the simulation will pause and require a human intervention.
+To start, simply click the **Start Simulation** button in the control panel on the left. The simulation will advance one "day" at a time, with agents taking action and events potentially occurring. You can observe the performance trends over time and the detailed agent logs below. If a catastrophic event occurs, the simulation will pause and require a human intervention.
 """)
 st.markdown("---")
 
@@ -347,13 +346,13 @@ st.markdown("---")
 # --- Sidebar ---
 st.sidebar.header("Control Panel")
 if st.session_state.simulation_running:
-    st.sidebar.button("⏹️ Stop Simulation", on_click=stop_simulation)
+    st.sidebar.button("Stop Simulation", on_click=stop_simulation)
 elif st.session_state.human_intervention_needed:
-    st.sidebar.warning("🚨 A major crisis requires human intervention!")
-    st.sidebar.button("👨‍💼 Human Intervention: Resolve Crisis", on_click=human_intervene)
+    st.sidebar.warning("A major crisis requires human intervention!")
+    st.sidebar.button("Human Intervention: Resolve Crisis", on_click=human_intervene)
 else:
-    st.sidebar.button("▶️ Start Simulation", on_click=start_simulation)
-st.sidebar.button("🔄 Reset Simulation", on_click=reset_simulation)
+    st.sidebar.button("Start Simulation", on_click=start_simulation)
+st.sidebar.button("Reset Simulation", on_click=reset_simulation)
 st.sidebar.markdown("---")
 st.sidebar.header("Agentic Framework")
 st.sidebar.markdown("""
@@ -433,4 +432,4 @@ st.plotly_chart(fig_metrics, use_container_width=True)
 if st.session_state.simulation_running:
     time.sleep(1) # Simulates a day passing every second
     advance_day()
-    st.experimental_rerun()
+    st.rerun()
