@@ -400,7 +400,17 @@ st.subheader("Performance Trends Over Time")
 df_metrics = pd.DataFrame(st.session_state.kpis)
 fig_metrics = px.line(df_metrics, x='day', y=list(df_metrics.columns[1:]),
                       title='Supply Chain KPIs Over Time', markers=True)
-fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
+
+# Update the y-axis ranges for a smoother visual experience
+fig_metrics.update_yaxes(
+    range=[0, 100],  # On-time, Risk are percentages, so 0-100 is appropriate.
+    title="Value",
+    secondary_y=False,
+    matches='y'
+)
+fig_metrics.update_layout(
+    legend_title="KPIs"
+)
 st.plotly_chart(fig_metrics, use_container_width=True)
 
 
