@@ -17,7 +17,7 @@ In the real world, demand and lead times are rarely certain. Relying on determin
 """)
 
 # -- The Concept: Stochastic Optimization --
-st.subheader("Stochastic Optimization")
+st.subheader("The Concept: Stochastic Optimization")
 st.write("""
 This project uses **Monte Carlo simulation** to model an inventory system over many scenarios. Instead of a single value, we use a **probability distribution** for demand. The model then helps find an optimal inventory policy (e.g., safety stock) that minimizes total costs on average.
 """)
@@ -64,7 +64,6 @@ def run_simulation(safety_stock, simulation_id):
 
 # Use a button to get new random data
 if st.button("Run New Simulation"):
-    # Clear cache and rerun to generate a new random seed
     st.session_state['simulation_id'] = np.random.randint(0, 1000000)
 
 if 'simulation_id' not in st.session_state:
