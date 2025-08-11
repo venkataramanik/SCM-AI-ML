@@ -1,186 +1,197 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import random
+# app.py
+# Streamlit SCOR ERP Simulator (Plan–Source–Make–Deliver–Return–Enable)
+# Drop this file next to a folder named `SCOR_Sim_v1` containing the CSVs listed below.
+# Run:  streamlit run app.py
+
+import os
 import time
+from datetime import timedelta
+import numpy as np
+import pandas as pd
+import streamlit as st
+import matplotlib.pyplot as plt
 
-# --- Configuration ---
-st.set_page_config(
-    page_title="SCM Persona Simulation",
-    page_icon="👥",
-    layout="wide",
-)
+st.set_page_config(page_title="SCOR ERP Simulator", layout="wide")
 
-# --- State Initialization ---
-if 'simulation_log' not in st.session_state:
-    st.session_state.simulation_log = []
-if 'inventory' not in st.session_state:
-    st.session_state.inventory = {'raw_materials': 100, 'finished_goods': 50}
-if 'orders' not in st.session_state:
-    st.session_state.orders = []
-if 'transportation' not in st.session_state:
-    st.session_state.transportation = {'deliveries_sent': 0, 'on_time_deliveries': 0, 'total_cost': 0}
-if 'forecast_data' not in st.session_state:
-    st.session_state.forecast_data = {
-        'last_forecast': 60,
-        'actual_demand': 55,
-        'forecast_accuracy': 91.67
-    }
-if 'warehouse_metrics' not in st.session_state:
-    st.session_state.warehouse_metrics = {'orders_picked': 0, 'picking_rate': 0}
+# ---------- Utilities ----------
+@st.cache_data
+def load_csv(path, **kwargs):
+    return pd.read_csv(path, **kwargs)
 
-# --- Constants ---
-AVG_ORDER_SIZE = 5
-AVG_PICKING_TIME_PER_UNIT = 0.5 # minutes
-TRANSPORT_COST_PER_UNIT = 2
-ON_TIME_PROBABILITY = 0.9
+def ensure_paths(base_path):
+    needed = [
+        "items.csv","boms.csv","work_centers.csv","routings.csv",
+        "suppliers.csv","transport_lanes.csv","policies.csv",
+        "inventories.csv","demand_forecast.csv","customer_orders.csv",
+        "kpi_targets.csv"
+    ]
+    missing = [f for f in needed if not os.path.exists(os.path.join(base_path,f))]
+    return missing
 
-# --- Helper Functions ---
-def add_log(persona, message, level='info'):
-    """Adds a timestamped message to the simulation log."""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    st.session_state.simulation_log.append({
-        'timestamp': timestamp,
-        'persona': persona,
-        'message': message,
-        'level': level,
-    })
-
-def reset_simulation():
-    """Resets all simulation state to its initial values and re-runs the app."""
-    st.session_state.clear()
-    st.experimental_rerun()
-
-# --- Persona-Specific Logic ---
-def run_demand_planner_task():
-    """Simulates the Demand Planner's daily task of generating a new forecast."""
-    add_log("Demand Planner", "Generating new forecast...", 'info')
-    
-    # Generate new random actual demand
-    new_actual_demand = random.randint(40, 70)
-    
-    # Generate a new forecast with some random error
-    new_forecast = new_actual_demand + random.randint(-5, 5)
-    
-    # Calculate forecast accuracy
-    forecast_accuracy = (1 - abs(new_actual_demand - new_forecast) / new_actual_demand) * 100
-    
-    st.session_state.forecast_data = {
-        'last_forecast': new_forecast,
-        'actual_demand': new_actual_demand,
-        'forecast_accuracy': round(forecast_accuracy, 2)
-    }
-    
-    add_log("Demand Planner", f"New forecast generated: {new_forecast} units. Actual demand: {new_actual_demand} units. Accuracy: {st.session_state.forecast_data['forecast_accuracy']}%", 'success')
-
-def run_warehouse_manager_task():
-    """Simulates the Warehouse Manager fulfilling orders and receiving goods."""
-    add_log("Warehouse Manager", "Receiving new raw materials...", 'info')
-    raw_material_received = random.randint(50, 100)
-    st.session_state.inventory['raw_materials'] += raw_material_received
-    add_log("Warehouse Manager", f"{raw_material_received} new raw materials received. Inventory updated.", 'success')
-
-    # Fulfill a random number of orders
-    orders_to_fulfill = random.randint(1, 3)
-    orders_fulfilled = 0
-    for _ in range(orders_to_fulfill):
-        if st.session_state.inventory['finished_goods'] >= AVG_ORDER_SIZE:
-            st.session_state.inventory['finished_goods'] -= AVG_ORDER_SIZE
-            st.session_state.orders.append({'id': len(st.session_state.orders) + 1, 'quantity': AVG_ORDER_SIZE, 'status': 'Awaiting Delivery'})
-            orders_fulfilled += 1
-            add_log("Warehouse Manager", f"Order #{len(st.session_state.orders)} fulfilled ({AVG_ORDER_SIZE} units). Ready for transport.", 'success')
-        else:
-            add_log("Warehouse Manager", "Not enough finished goods to fulfill an order.", 'warning')
-
-    if orders_fulfilled > 0:
-        picking_rate = (orders_fulfilled * AVG_ORDER_SIZE) / (orders_fulfilled * AVG_PICKING_TIME_PER_UNIT) # units per minute
-        st.session_state.warehouse_metrics['orders_picked'] += orders_fulfilled
-        st.session_state.warehouse_metrics['picking_rate'] = round(picking_rate * 60, 2) # units per hour
-        add_log("Warehouse Manager", f"{orders_fulfilled} orders picked. Picking rate: {st.session_state.warehouse_metrics['picking_rate']} units/hour.", 'info')
-
-def run_transport_manager_task():
-    """Simulates the Transport Manager optimizing routes and delivering goods."""
-    add_log("Transport Manager", "Checking for orders to deliver...", 'info')
-    
-    orders_to_deliver = [o for o in st.session_state.orders if o['status'] == 'Awaiting Delivery']
-    if not orders_to_deliver:
-        add_log("Transport Manager", "No orders waiting for delivery.", 'warning')
-        return
-
-    add_log("Transport Manager", f"Optimizing routes for {len(orders_to_deliver)} orders...", 'info')
-    
-    for order in orders_to_deliver:
-        # Simulate on-time delivery with a random probability
-        if random.random() < ON_TIME_PROBABILITY:
-            st.session_state.transportation['on_time_deliveries'] += 1
-            add_log("Transport Manager", f"Order #{order['id']} delivered successfully and on-time!", 'success')
-        else:
-            add_log("Transport Manager", f"Order #{order['id']} delivered late.", 'error')
-        
-        st.session_state.transportation['deliveries_sent'] += 1
-        st.session_state.transportation['total_cost'] += order['quantity'] * TRANSPORT_COST_PER_UNIT
-        order['status'] = 'Delivered'
-    
-    add_log("Transport Manager", f"{len(orders_to_deliver)} deliveries dispatched. Total cost updated.", 'success')
-
-# --- UI Layout ---
-st.title("👥 SCM Persona Simulation Dashboard")
-st.markdown("A demonstration of key supply chain personas, their priorities, and their daily operational tasks.")
-
-# --- Persona Tabs ---
-tab1, tab2, tab3 = st.tabs(["🔮 Demand Planner", "📦 Warehouse Manager", "🚚 Transport Manager"])
-
-with tab1:
-    st.header("🔮 Demand Planner Dashboard")
-    st.subheader("Key Performance Indicators")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(label="Forecast Accuracy", value=f"{st.session_state.forecast_data['forecast_accuracy']}%")
-    with col2:
-        st.metric(label="Inventory Turns", value=round(st.session_state.forecast_data['actual_demand'] / (st.session_state.inventory['finished_goods'] + st.session_state.inventory['raw_materials']), 2))
-    st.markdown("---")
-    st.subheader("Daily Task")
-    st.button("Generate New Forecast", on_click=run_demand_planner_task)
-    st.info("The Demand Planner's main task is to predict future demand. This impacts inventory levels and production plans.")
-
-with tab2:
-    st.header("📦 Warehouse Manager Dashboard")
-    st.subheader("Key Performance Indicators")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(label="Order Picking Rate", value=f"{st.session_state.warehouse_metrics['picking_rate']} units/hour")
-    with col2:
-        st.metric(label="Finished Goods Inventory", value=st.session_state.inventory['finished_goods'])
-    st.markdown("---")
-    st.subheader("Daily Task")
-    st.button("Fulfill Orders & Receive Goods", on_click=run_warehouse_manager_task)
-    st.info("The Warehouse Manager focuses on the physical movement of goods, ensuring orders are filled and inventory is accurate.")
-
-with tab3:
-    st.header("🚚 Transport Manager Dashboard")
-    st.subheader("Key Performance Indicators")
-    col1, col2 = st.columns(2)
-    with col1:
-        on_time_rate = (st.session_state.transportation['on_time_deliveries'] / st.session_state.transportation['deliveries_sent']) * 100 if st.session_state.transportation['deliveries_sent'] > 0 else 0
-        st.metric(label="On-Time Delivery Rate", value=f"{round(on_time_rate, 2)}%")
-    with col2:
-        cost_per_unit = st.session_state.transportation['total_cost'] / (st.session_state.transportation['deliveries_sent'] * AVG_ORDER_SIZE) if st.session_state.transportation['deliveries_sent'] > 0 else 0
-        st.metric(label="Transport Cost per Unit", value=f"${round(cost_per_unit, 2)}")
-    st.markdown("---")
-    st.subheader("Daily Task")
-    st.button("Optimize Routes & Deliver Shipments", on_click=run_transport_manager_task)
-    st.info("The Transport Manager is responsible for moving goods from the warehouse to the customer, balancing speed and cost.")
-
-st.markdown("---")
-
-# --- Central Log ---
-st.subheader("System Log")
-col_log, col_reset = st.columns([4, 1])
-with col_reset:
-    st.button("🔄 Reset Simulation", on_click=reset_simulation)
-with col_log:
-    if st.session_state.simulation_log:
-        log_df = pd.DataFrame(st.session_state.simulation_log)
-        st.dataframe(log_df.set_index('timestamp'), use_container_width=True, height=250)
+# ---------- Simulation Core ----------
+def place_po(item_id, qty, today, inbound, lane_choice="auto"):
+    # Simple mapping of suppliers and lanes
+    if item_id == "RM-10":
+        supplier_id = "SUP-IN-01"; lane = "IN-US-Ocean"; lt=14
+    elif item_id == "RM-20":
+        supplier_id = "SUP-IN-02"; lane = "IN-US-Ocean"; lt=18
     else:
-        st.info("Click on a Persona's 'Daily Task' button to start the simulation!")
+        supplier_id = "SUP-CN-01"; lane = "CN-US-Ocean"; lt=20
+
+    # Transit times (ocean vs air)
+    if lane_choice == "air":
+        transit = 5 if "CN" in lane else 6
+    else:
+        transit = 28 if "CN" in lane else 30
+
+    arrival = today + pd.Timedelta(days=lt + transit)
+    inbound.append((item_id, int(qty), arrival))
+    return inbound
+
+def run_sim(
+    base_path,
+    horizon_days=90,
+    demand_surge_pct=0.0,
+    supplier_delay_days=0,
+    expedite_threshold=0.0,
+    apply_capacity=False,
+    asm_capacity=800,
+    test_capacity=700,
+    ss_multiplier=1.0,
+    random_seed=42
+):
+    np.random.seed(random_seed)
+
+    items = load_csv(os.path.join(base_path,"items.csv"))
+    boms = load_csv(os.path.join(base_path,"boms.csv"))
+    work_centers = load_csv(os.path.join(base_path,"work_centers.csv"))
+    routings = load_csv(os.path.join(base_path,"routings.csv"))
+    suppliers = load_csv(os.path.join(base_path,"suppliers.csv"))
+    transport_lanes = load_csv(os.path.join(base_path,"transport_lanes.csv"))
+    policies = load_csv(os.path.join(base_path,"policies.csv")).set_index("item_id").to_dict("index")
+    inventories_df = load_csv(os.path.join(base_path,"inventories.csv"))
+    demand_forecast = load_csv(os.path.join(base_path,"demand_forecast.csv"), parse_dates=["date"])
+    orders = load_csv(os.path.join(base_path,"customer_orders.csv"), parse_dates=["date"]).copy()
+
+    # Demand surge
+    if demand_surge_pct != 0.0:
+        factor = 1.0 + demand_surge_pct/100.0
+        orders["order_qty"] = (orders["order_qty"] * factor).round().astype(int)
+
+    # Due dates and shipment fields
+    orders["due_date"] = orders["date"] + pd.to_timedelta(
+        np.random.choice([3,5,7], size=len(orders), p=[0.4,0.4,0.2]), unit="D"
+    )
+    orders["shipped_qty"] = 0
+    orders.loc[:, "ship_date"] = pd.NaT
+
+    # Inventory dict
+    inv = inventories_df.set_index(["item_id","location"])["on_hand"].to_dict()
+
+    # Simple cost model
+    sales_price = {"FG-100":120.0, "FG-200":140.0}
+    unit_cost_rm = {"RM-10":10.0, "RM-20":5.0, "RM-30":20.0}
+    logistics_cost = 0.0
+    revenue = 0.0
+    cogs = 0.0
+
+    # Inbound pipeline
+    inbound = []
+
+    # Timeline
+    start_date = orders["date"].min()
+    end_date = start_date + pd.Timedelta(days=horizon_days)
+
+    # Capacity per WC (hrs/day)
+    wc_caps = {"WC-ASM": asm_capacity, "WC-TEST": test_capacity}
+
+    kpi_records = []
+
+    # Precompute routing hours per unit
+    rt_map = routings.groupby("item_id").apply(lambda g: g["std_hours_per_unit"].sum()).to_dict()
+
+    supplier_delay_days = int(supplier_delay_days)
+
+    while start_date < end_date:
+        # Receive inbound (apply supplier delay)
+        received_today = [x for x in inbound if (x[2] + pd.Timedelta(days=supplier_delay_days)).date() == start_date.date()]
+        for (itm, q, _) in received_today:
+            inv[(itm,"MAIN")] = inv.get((itm,"MAIN"), 0) + q
+        inbound = [x for x in inbound if x not in received_today]
+
+        # PLAN: RM reorder
+        for rm in ["RM-10","RM-20","RM-30"]:
+            lvl = inv.get((rm,"MAIN"), 0)
+            pol = policies.get(rm, {})
+            rpoint = pol.get("reorder_point", 0)
+            ss = pol.get("safety_stock", 0) * ss_multiplier
+            if lvl < rpoint:
+                qty = int(ss + rpoint - lvl + 1000)
+                inbound = place_po(rm, qty, start_date, inbound, lane_choice="auto")
+                logistics_cost += 0.05*qty  # placeholder
+
+        # MAKE: produce to match today's orders (simple build-to-order), optionally capacity-bound
+        todays_orders = orders.loc[orders["date"] == start_date.date()].copy()
+        rem_hours = (
+            {"WC-ASM": wc_caps["WC-ASM"], "WC-TEST": wc_caps["WC-TEST"]}
+            if apply_capacity else {"WC-ASM": 1e9, "WC-TEST": 1e9}
+        )
+
+        for _, so in todays_orders.iterrows():
+            fg = so["item_id"]
+            qty = int(so["order_qty"])
+
+            # Max producible due to RM
+            bom_rows = boms.loc[boms["parent_item_id"] == fg]
+            can_make = qty
+            for _, b in bom_rows.iterrows():
+                on_hand = inv.get((b["component_item_id"],"MAIN"), 0)
+                can_make = min(can_make, int(on_hand // b["qty_per"]))
+
+            # Capacity constraint
+            if apply_capacity:
+                rt_fg = routings[routings["item_id"] == fg]
+                total_std = rt_fg["std_hours_per_unit"].sum()
+                prod_qty_cap = can_make
+                for _, r in rt_fg.iterrows():
+                    wc = r["wc_id"]
+                    cap_units = int(rem_hours[wc] / (r["std_hours_per_unit"] if r["std_hours_per_unit"] > 0 else 1e9))
+                    prod_qty_cap = min(prod_qty_cap, cap_units)
+                prod_qty = max(0, min(can_make, prod_qty_cap))
+                # Deduct hours
+                for _, r in rt_fg.iterrows():
+                    wc = r["wc_id"]
+                    rem_hours[wc] -= prod_qty * r["std_hours_per_unit"]
+                    rem_hours[wc] = max(0.0, rem_hours[wc])
+            else:
+                prod_qty = can_make
+
+            # Consume RM and add FG
+            for _, b in bom_rows.iterrows():
+                inv[(b["component_item_id"],"MAIN")] = inv.get((b["component_item_id"],"MAIN"), 0) - int(b["qty_per"]*prod_qty)
+            inv[(fg,"MAIN")] = inv.get((fg,"MAIN"), 0) + prod_qty
+
+        # DELIVER: ship open orders by due date
+        open_orders = orders[(orders["shipped_qty"] < orders["order_qty"]) & (orders["due_date"] >= start_date)].copy()
+        for idx, so in open_orders.iterrows():
+            fg = so["item_id"]
+            need = int(so["order_qty"] - so["shipped_qty"])
+            available = inv.get((fg,"MAIN"), 0)
+            ship = min(need, available)
+            if ship > 0:
+                inv[(fg,"MAIN")] = available - ship
+                orders.at[idx, "shipped_qty"] += ship
+                orders.at[idx, "ship_date"] = start_date
+                revenue += ship * sales_price.get(fg, 100.0)
+                # COGS from RM
+                bom_rows = boms.loc[boms["parent_item_id"] == fg]
+                unit_cogs = sum(unit_cost_rm.get(r["component_item_id"], 0) * r["qty_per"] for _, r in bom_rows.iterrows())
+                cogs += ship * unit_cogs
+
+        # Simple expedite trigger: if backlog ratio >= threshold, speed up future inbound (simulate ocean→air)
+        backlog_orders = orders[(orders["shipped_qty"] < orders["order_qty"]) & (orders["due_date"] >= start_date)]
+        backlog_ratio = 0.0
+        if len(backlog_orders) > 0:
+            demand_left = (backlog_orders["order_qty"] - backlog_orders["shipped_qty"]).sum()
+            fg_on_hand = sum(inv.get((k,"MAIN"), 0) for k in ["FG-100","FG-200"])
+            backlog_ratio = max(0.0, (demand_left - fg_on_hand) / max(1, demand
