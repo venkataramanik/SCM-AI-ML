@@ -83,6 +83,7 @@ def add_log(agent, message, level='info'):
         'agent': agent,
         'message': message,
         'level': level,
+        'active_boost': st.session_state.agent_boost if st.session_state.agent_boost else 'None'
     })
 
 def trigger_agent_boost():
@@ -145,7 +146,7 @@ def advance_day():
     st.session_state.kpis['day'].append(st.session_state.day)
     st.session_state.kpis['on_time_delivery_rate'].append(min(100, max(0, current_on_time)))
     st.session_state.kpis['supply_chain_cost'].append(max(0, current_cost))
-    st.session_state.kpis['inventory_days_of_supply'].append(max(0, current_inventory))
+    st.session_state.kpis['inventory_days_of_supply'].append(max(0, current_inventory)))
     st.session_state.kpis['risk_exposure_score'].append(min(100, max(0, current_risk)))
 
     add_log("System", f"Day {st.session_state.day}: KPI changes calculated.", 'info')
@@ -326,8 +327,7 @@ st.sidebar.markdown("""
 
 st.header("Simulation Dashboard")
 
-# --- Performance Metrics and Graph Display (Now a unified, refreshed block) ---
-# Create a fresh DataFrame on every rerun for consistency
+# --- Performance Metrics and Graph Display ---
 df_metrics = pd.DataFrame(st.session_state.kpis)
 latest_kpis = df_metrics.iloc[-1]
 
@@ -357,7 +357,12 @@ st.markdown("""
 .stDataFrame th:nth-child(4), .stDataFrame td:nth-child(4) {
     word-wrap: break-word;
     white-space: normal;
-    width: 60%;
+    width: 40%;
+}
+.stDataFrame th:nth-child(5), .stDataFrame td:nth-child(5) {
+    word-wrap: break-word;
+    white-space: normal;
+    width: 20%;
 }
 .stDataFrame th:nth-child(1), .stDataFrame td:nth-child(1) {
     width: 5%;
@@ -375,6 +380,7 @@ log_container = st.container(height=300)
 with log_container:
     if len(st.session_state.simulation_log) > 0:
         df_log = pd.DataFrame(st.session_state.simulation_log)
+        df_log = df_log.rename(columns={'active_boost': 'Active Boost'})
         st.dataframe(df_log.sort_values(by='day', ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Simulation log is currently empty.")
@@ -383,7 +389,8 @@ st.markdown("---")
 st.subheader("Performance Trends Over Time")
 
 # --- The Chart Display Logic (Always renders from the latest data) ---
-fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
+# FIX: Explicitly cast the DataFrame columns to a list for Plotly.
+fig_metrics = px.line(df_metrics, x='day', y=list(df_metrics.columns[1:]),
                       title='Supply Chain KPIs Over Time', markers=True)
 fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
 st.plotly_chart(fig_metrics, use_container_width=True)
@@ -394,4 +401,3 @@ if st.session_state.simulation_running:
     time.sleep(1)
     advance_day()
     st.rerun()
-
