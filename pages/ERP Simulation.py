@@ -232,7 +232,7 @@ def stop_simulation():
 def reset_simulation():
     """Resets all simulation state to its initial values."""
     st.session_state.clear()
-    st.rerun()
+    # The app will automatically re-run after the callback finishes.
 
 # --- UI Layout ---
 st.title("🤖 Advanced Agentic Supply Chain Simulation")
