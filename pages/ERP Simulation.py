@@ -169,9 +169,10 @@ def run_demand_forecast_agent():
     """Simulates the Demand Forecasting Agent's actions."""
     impacts = {}
     
-    # Proactive "business-as-usual" optimization
-    impacts['on_time'] = random.uniform(0.1, 0.5)
-    impacts['cost'] = random.uniform(-5.0, -1.0)
+    # Proactively and consistently apply the baseline agent impact every day
+    impacts['on_time'] = random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['on_time'])
+    impacts['cost'] = random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['cost'])
+    impacts['inventory'] = random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['inventory'])
     
     if 'demand_forecast' in st.session_state.message_bus:
         message = st.session_state.message_bus.pop('demand_forecast')
@@ -180,10 +181,10 @@ def run_demand_forecast_agent():
             st.session_state.agent_states['demand_forecast']['current_forecast'] = 150
             st.session_state.message_bus['procurement'] = {'type': 'forecast_update', 'data': 150}
             
-            # Agents help mitigate the problem
-            impacts['on_time'] += random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['on_time'])
-            impacts['cost'] += random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['cost'])
-            impacts['inventory'] = random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['inventory'])
+            # Add an extra bonus on top of the baseline for reacting to the event
+            impacts['on_time'] += 2.0
+            impacts['cost'] += -5.0
+            impacts['inventory'] += -2.0
     
     add_log("DemandForecastAgent", "Proactively forecasting and optimizing inventory levels.")
     
@@ -200,9 +201,10 @@ def run_procurement_agent():
     """Simulates the Procurement Agent's actions."""
     impacts = {}
     
-    # Proactive "business-as-usual" optimization
-    impacts['on_time'] = random.uniform(0.1, 0.5)
-    impacts['cost'] = random.uniform(-5.0, -1.0)
+    # Proactively and consistently apply the baseline agent impact every day
+    impacts['on_time'] = random.uniform(*BASE_AGENT_IMPACTS['procurement']['on_time'])
+    impacts['cost'] = random.uniform(*BASE_AGENT_IMPACTS['procurement']['cost'])
+    impacts['risk'] = random.uniform(*BASE_AGENT_IMPACTS['procurement']['risk'])
     
     # Check for incoming messages
     if 'procurement' in st.session_state.message_bus:
@@ -221,9 +223,10 @@ def run_procurement_agent():
                 if event_name in st.session_state.agent_states['learning']:
                     st.session_state.agent_states['learning'][event_name] += 1
                 
-                impacts['on_time'] += random.uniform(BASE_AGENT_IMPACTS['procurement']['on_time'][0] + learning_bonus, BASE_AGENT_IMPACTS['procurement']['on_time'][1] + learning_bonus)
-                impacts['cost'] += random.uniform(BASE_AGENT_IMPACTS['procurement']['cost'][0], BASE_AGENT_IMPACTS['procurement']['cost'][1])
-                impacts['risk'] = random.uniform(BASE_AGENT_IMPACTS['procurement']['risk'][0], BASE_AGENT_IMPACTS['procurement']['risk'][1])
+                # Add an extra bonus on top of the baseline for reacting to the event
+                impacts['on_time'] += random.uniform(2.0, 4.0) + learning_bonus
+                impacts['cost'] += random.uniform(-10.0, -5.0)
+                impacts['risk'] += random.uniform(-3.0, -1.0)
             else:
                 add_log("ProcurementAgent", f"Failed to find a quick alternative. Shipment will be delayed.", 'error')
 
@@ -242,9 +245,9 @@ def run_logistics_agent():
     """Simulates the Logistics Agent's actions."""
     impacts = {}
     
-    # Proactive "business-as-usual" optimization
-    impacts['on_time'] = random.uniform(0.1, 0.5)
-    impacts['cost'] = random.uniform(-5.0, -1.0)
+    # Proactively and consistently apply the baseline agent impact every day
+    impacts['on_time'] = random.uniform(*BASE_AGENT_IMPACTS['logistics']['on_time'])
+    impacts['cost'] = random.uniform(*BASE_AGENT_IMPACTS['logistics']['cost'])
     
     # Check for incoming messages
     if 'logistics' in st.session_state.message_bus:
@@ -263,8 +266,9 @@ def run_logistics_agent():
                 if event_name in st.session_state.agent_states['learning']:
                     st.session_state.agent_states['learning'][event_name] += 1
 
-                impacts['on_time'] += random.uniform(BASE_AGENT_IMPACTS['logistics']['on_time'][0] + learning_bonus, BASE_AGENT_IMPACTS['logistics']['on_time'][1] + learning_bonus)
-                impacts['cost'] += random.uniform(BASE_AGENT_IMPACTS['logistics']['cost'][0], BASE_AGENT_IMPACTS['logistics']['cost'][1])
+                # Add an extra bonus on top of the baseline for reacting to the event
+                impacts['on_time'] += random.uniform(2.0, 4.0) + learning_bonus
+                impacts['cost'] += random.uniform(-5.0, -2.0)
             else:
                 add_log("LogisticsAgent", f"Failed to find an efficient alternative route. Delays expected.", 'error')
     
