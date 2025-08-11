@@ -46,7 +46,7 @@ st.write("""
 # -- Code and Model Demonstration --
 @st.cache_data
 def generate_and_train_model():
-    # np.random.seed(42)  <-- This line was removed
+    # This function is now cached, so it runs only once per session
     units_sold_data = np.random.normal(loc=500, scale=150, size=500).astype(int)
     units_sold_data[units_sold_data < 0] = 0
     total_revenue_data = (units_sold_data * 150) + np.random.normal(loc=0, scale=15000, size=500)
@@ -56,10 +56,15 @@ def generate_and_train_model():
     })
     X = df[['Units Sold']]
     y = df['Total Revenue']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
     model = LinearRegression()
     model.fit(X_train, y_train)
     return model, X, y, df
+
+# Add a button to clear the cache and force a re-run
+if st.button("Generate New Data"):
+    st.cache_data.clear()
+    st.rerun()
 
 model, X, y, df = generate_and_train_model()
 
