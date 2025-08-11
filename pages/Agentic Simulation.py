@@ -386,7 +386,8 @@ st.subheader("Agent & Event Log")
 # --- Central Log (Scrollable Container with DataFrame) ---
 log_container = st.container(height=300)
 with log_container:
-    if st.session_state.simulation_log:
+    # Check if the log is not empty before attempting to create the DataFrame
+    if len(st.session_state.simulation_log) > 0:
         df_log = pd.DataFrame(st.session_state.simulation_log)
         # Sort by day in descending order to show latest logs first
         st.dataframe(df_log.sort_values(by='day', ascending=False), use_container_width=True, hide_index=True)
