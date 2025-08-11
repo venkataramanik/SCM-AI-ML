@@ -7,3 +7,6 @@ seaborn
 statsmodels
 prophet
 plotly
+haversine
+gymnasium
+stable-baselines3[extra]
