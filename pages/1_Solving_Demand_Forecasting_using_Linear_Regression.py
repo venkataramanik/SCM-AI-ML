@@ -23,39 +23,42 @@ In a supply chain, accurate demand forecasting is the bedrock of operational eff
 # -- The Concept: Simulated Data --
 st.subheader("Simulated Data for Our Playground")
 st.write("""
-Instead of using public data, this project uses a simulated dataset to demonstrate the core concept.
+I used a simulated dataset to demonstrate the core concept.
 """)
 
-# -- Concept Explanation --
-st.subheader("The Concept: Supervised Learning & Linear Regression")
+# -- Concept Explanation Section --
+st.subheader("Supervised Learning & Linear Regression")
 st.write("""
 This project uses **Supervised Learning**, a type of machine learning where we train a model on a labeled dataset. We give the model both the input (Units Sold) and the correct output (Total Revenue). The model's job is to learn the relationship between these two variables.
 
 We use **Linear Regression** to find the "line of best fit" that represents this relationship. This simple yet powerful concept allows us to make predictions on new data.
 """)
 
+# -- Tools Used Section --
+st.subheader("Tools Used")
+st.write("""
+- **Pandas** for data manipulation.
+- **Numpy** for data simulation.
+- **Scikit-learn** for building the machine learning model.
+- **Matplotlib** for data visualization.
+""")
+
 # -- Code and Model Demonstration --
 @st.cache_data
 def generate_and_train_model():
-    np.random.seed(42) # This ensures the data is the same every time the app runs
-    
+    np.random.seed(42)
     units_sold_data = np.random.normal(loc=500, scale=150, size=500).astype(int)
     units_sold_data[units_sold_data < 0] = 0
-
     total_revenue_data = (units_sold_data * 150) + np.random.normal(loc=0, scale=15000, size=500)
-
     df = pd.DataFrame({
         'Units Sold': units_sold_data,
         'Total Revenue': total_revenue_data
     })
-    
     X = df[['Units Sold']]
     y = df['Total Revenue']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
     model = LinearRegression()
     model.fit(X_train, y_train)
-    
     return model, X, y, df
 
 model, X, y, df = generate_and_train_model()
@@ -63,7 +66,7 @@ model, X, y, df = generate_and_train_model()
 # -- Display the Raw Data --
 st.subheader("Raw Simulated Data")
 st.write("The table below shows the data our model was trained on. Each row represents a sales record with Units Sold and its corresponding Total Revenue.")
-st.dataframe(df.head(10)) # We'll show just the first 10 rows to keep it clean
+st.dataframe(df.head(10))
 
 st.subheader("Make a Prediction")
 st.info('Adjust the slider below to see the predicted revenue for a given number of units sold.')
@@ -72,10 +75,13 @@ predicted_revenue = model.predict([[units_sold]])
 st.metric(label=f"Predicted Revenue for {units_sold:,} units", value=f"${predicted_revenue[0]:,.2f}")
 
 st.subheader("Visualizing the Model")
-st.write("This chart shows our model's 'line of best fit' against the simulated sales data. It visually represents the relationship our model has learned.")
+st.write("This chart shows our model's 'line of best fit' and highlights your prediction as you adjust the slider.")
 fig, ax = plt.subplots(figsize=(10, 6))
 ax.scatter(X, y, color='blue', label='Simulated Sales Data')
 ax.plot(X, model.predict(X), color='red', linewidth=2, label='Linear Regression Predictions')
+ax.scatter(units_sold, predicted_revenue, color='green', s=200, label='Your Prediction')
+ax.axvline(units_sold, color='green', linestyle='--', linewidth=1)
+ax.axhline(predicted_revenue, color='green', linestyle='--', linewidth=1)
 ax.set_title('Simulated Units Sold vs. Total Revenue')
 ax.set_xlabel('Units Sold')
 ax.set_ylabel('Total Revenue')
