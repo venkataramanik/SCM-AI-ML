@@ -22,11 +22,11 @@ While linear regression is a great starting point, real-world demand forecasting
 # -- The Concept: Simulated Data --
 st.subheader("Simulated Data for Our Playground")
 st.write("""
-This project uses a simulated dataset, but this time with an added 'promotional_campaign' feature to show how a more advanced model can handle multiple variables. The data is now more realistic, with a clearer distinction between promotional and non-promotional sales.
+This project uses a simulated dataset, but this time with an added 'promotional_campaign' feature to show how a more advanced model can handle multiple variables. 
 """)
 
 # -- Concept Explanation --
-st.subheader("The Concept: Random Forest (Supervised Learning)")
+st.subheader("Random Forest (Supervised Learning)")
 st.write("""
 The **Random Forest** algorithm is a powerful **Supervised Learning** method that builds multiple "decision trees" and combines their outputs to make a more accurate prediction. Think of it as a committee of experts: each tree analyzes the data differently, and their collective judgment is more robust than any single one. This makes it highly effective at capturing complex, non-linear relationships in the data.
 """)
