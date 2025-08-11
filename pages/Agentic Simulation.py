@@ -152,14 +152,13 @@ def advance_day():
     st.session_state.latest_kpi_values['inventory_days_of_supply'] = max(0, st.session_state.latest_kpi_values['inventory_days_of_supply'] + inventory_change)
     st.session_state.latest_kpi_values['risk_exposure_score'] = min(100, max(0, st.session_state.latest_kpi_values['risk_exposure_score'] + risk_change))
     
-    # Only append the data to the graph's dataset every 5 days
-    if st.session_state.day % 5 == 0:
-        st.session_state.kpis['day'].append(st.session_state.day)
-        st.session_state.kpis['on_time_delivery_rate'].append(st.session_state.latest_kpi_values['on_time_delivery_rate'])
-        st.session_state.kpis['supply_chain_cost'].append(st.session_state.latest_kpi_values['supply_chain_cost'])
-        st.session_state.kpis['inventory_days_of_supply'].append(st.session_state.latest_kpi_values['inventory_days_of_supply'])
-        st.session_state.kpis['risk_exposure_score'].append(st.session_state.latest_kpi_values['risk_exposure_score'])
-        add_log("System", f"Day {st.session_state.day}: KPI changes logged to graph.", 'info')
+    # Append the data to the graph's dataset every day
+    st.session_state.kpis['day'].append(st.session_state.day)
+    st.session_state.kpis['on_time_delivery_rate'].append(st.session_state.latest_kpi_values['on_time_delivery_rate'])
+    st.session_state.kpis['supply_chain_cost'].append(st.session_state.latest_kpi_values['supply_chain_cost'])
+    st.session_state.kpis['inventory_days_of_supply'].append(st.session_state.latest_kpi_values['inventory_days_of_supply'])
+    st.session_state.kpis['risk_exposure_score'].append(st.session_state.latest_kpi_values['risk_exposure_score'])
+    add_log("System", f"Day {st.session_state.day}: KPI changes logged to graph.", 'info')
 
 def run_agents():
     """Orchestrates agent interactions for the current day."""
