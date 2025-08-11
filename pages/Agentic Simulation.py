@@ -365,25 +365,26 @@ st.sidebar.markdown("""
 
 st.header("Simulation Dashboard")
 
-# --- Performance Metrics (Updated for better display) ---
+# --- Performance Metrics (Now synced with the graph) ---
 df_metrics = pd.DataFrame(st.session_state.kpis)
+latest_kpis = df_metrics.iloc[-1]
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric(label="On-Time Delivery Rate", value=f"{df_metrics['on_time_delivery_rate'].iloc[-1]:.2f}%")
+    st.metric(label="On-Time Delivery Rate", value=f"{latest_kpis['on_time_delivery_rate']:.2f}%")
 with col2:
-    st.metric(label="Supply Chain Cost", value=f"${df_metrics['supply_chain_cost'].iloc[-1]:.2f}")
+    st.metric(label="Supply Chain Cost", value=f"${latest_kpis['supply_chain_cost']:.2f}")
 with col3:
-    st.metric(label="Inventory Days", value=f"{df_metrics['inventory_days_of_supply'].iloc[-1]:.2f} days")
+    st.metric(label="Inventory Days", value=f"{latest_kpis['inventory_days_of_supply']:.2f} days")
 with col4:
-    # Use a different display for Active Agent Boost to prevent text cutoff
-    st.markdown(f"**Active Agent Boost:** {st.session_state.agent_boost if st.session_state.agent_boost else 'None'}")
+    st.metric(label="Risk Exposure Score", value=f"{latest_kpis['risk_exposure_score']:.2f}")
+
+st.markdown(f"**Active Agent Boost:** {st.session_state.agent_boost if st.session_state.agent_boost else 'None'}")
     
 st.markdown("---")
 
 st.subheader("Agent & Event Log")
 
 # --- Central Log (Scrollable Container with DataFrame) ---
-# Inject custom CSS to allow text wrapping in the dataframe
 st.markdown("""
 <style>
 .stDataFrame table {
@@ -418,8 +419,7 @@ st.markdown("---")
 
 st.subheader("Performance Trends Over Time")
 
-# --- The Chart Display Logic (Always renders) ---
-df_metrics = pd.DataFrame(st.session_state.kpis)
+# --- The Chart Display Logic (Always renders from the latest data) ---
 fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
                       title='Supply Chain KPIs Over Time', markers=True)
 fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
