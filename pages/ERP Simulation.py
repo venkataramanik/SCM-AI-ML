@@ -286,4 +286,4 @@ else:
 if st.session_state.simulation_running:
     time.sleep(1) # Simulates a day passing every second
     advance_day()
-    st.experimental_rerun()
+    st.rerun() # Using st.rerun() instead of the deprecated st.experimental_rerun()
