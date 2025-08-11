@@ -5,6 +5,10 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+st.set_page_config(
+    page_title="Demand Forecasting"
+)
+
 st.title("Solving Demand Forecasting with Linear Regression")
 st.write("---")
 
@@ -18,7 +22,8 @@ In a supply chain, accurate demand forecasting is the bedrock of operational eff
 
 # -- The Concept: Simulated Data --
 st.subheader("Simulated Data for Our Playground")
-st.write("""Uses a simulated dataset to demonstrate the core concept.
+st.write("""
+Instead of using public data, this project uses a simulated dataset to demonstrate the core concept.
 """)
 
 # -- Concept Explanation --
@@ -32,7 +37,6 @@ We use **Linear Regression** to find the "line of best fit" that represents this
 # -- Code and Model Demonstration --
 @st.cache_data
 def generate_and_train_model():
-    # We use numpy to create random data to simulate real-world scenarios.
     np.random.seed(42) # This ensures the data is the same every time the app runs
     
     units_sold_data = np.random.normal(loc=500, scale=150, size=500).astype(int)
@@ -55,6 +59,11 @@ def generate_and_train_model():
     return model, X, y, df
 
 model, X, y, df = generate_and_train_model()
+
+# -- Display the Raw Data --
+st.subheader("Raw Simulated Data")
+st.write("The table below shows the data our model was trained on. Each row represents a sales record with Units Sold and its corresponding Total Revenue.")
+st.dataframe(df.head(10)) # We'll show just the first 10 rows to keep it clean
 
 st.subheader("Make a Prediction")
 st.info('Adjust the slider below to see the predicted revenue for a given number of units sold.')
