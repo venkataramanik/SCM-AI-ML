@@ -33,6 +33,15 @@ This project uses **Supervised Learning**, a type of machine learning where we t
 We use **Linear Regression** to find the "line of best fit" that represents this relationship. This simple yet powerful concept allows us to make predictions on new data.
 """)
 
+# -- Industry Applicability Section --
+st.subheader("Industry Applicability")
+st.write("""
+This type of forecasting is a foundational tool for a wide range of industries, helping to solve specific problems:
+- **Retail & E-commerce:** For non-perishable items with a clear sales trend, like basic apparel, consumer electronics accessories, or home goods.
+- **Manufacturing:** For components and raw materials that have a linear relationship with production volume, such as automotive parts or industrial chemicals.
+- **Logistics & Transportation:** For forecasting volume for predictable items like standard packages and freight on a specific route to optimize resource allocation.
+""")
+
 # -- Tools Used Section --
 st.subheader("Tools Used")
 st.write("""
