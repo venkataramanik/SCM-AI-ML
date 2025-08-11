@@ -109,7 +109,7 @@ def advance_day(on_time_change, cost_change, inventory_change, risk_change, even
     st.session_state.kpis['day'].append(st.session_state.day)
     st.session_state.kpis['on_time_delivery_rate'].append(min(100, max(0, current_on_time)))
     st.session_state.kpis['supply_chain_cost'].append(max(0, current_cost))
-    st.session_state.kpis['inventory_days_of_supply'].append(max(0, current_inventory)))
+    st.session_state.kpis['inventory_days_of_supply'].append(max(0, current_inventory))
     st.session_state.kpis['risk_exposure_score'].append(min(100, max(0, current_risk)))
 
     add_log("System", f"Day {st.session_state.day}: {event_desc} {event_message}", 'info')
@@ -158,7 +158,7 @@ st.sidebar.button("🔄 Reset Simulation", on_click=reset_simulation)
 st.sidebar.markdown("---")
 
 st.header("Control Panel")
-st.button("⏩ Run Agentic Day", on_click=run_simulation_day)
+st.button("⏩ Run Agentic Day", on_on_click=run_simulation_day)
 st.markdown("---")
 
 # --- Dashboard Metrics ---
