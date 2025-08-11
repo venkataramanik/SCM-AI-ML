@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 st.set_page_config(
-    page_title="Demand Forecasting"
+    page_title="Demand Forecasting: Linear Regression"
 )
 
 st.title("Solving Demand Forecasting with Linear Regression")
@@ -43,21 +43,10 @@ st.write("""
 - **Matplotlib** for data visualization.
 """)
 
-# -- Industry Applicability Section --
-st.subheader("Specific Industry Applicability")
-st.write("""
-Supervised learning forecasting is a foundational tool for a wide range of industries, helping to solve specific problems:
-
-- **Retail & E-commerce:** For non-perishable items like basic apparel, consumer electronics, or home goods.
-- **Manufacturing:** For components and raw materials such as automotive parts, industrial chemicals, or electronic components.
-- **Logistics & Transportation:** For forecasting volume for predictable items like standard packages and freight.
-- **Fast-Moving Consumer Goods (FMCG):** For products with stable consumption, such as packaged foods and household supplies.
-""")
-
 # -- Code and Model Demonstration --
 @st.cache_data
 def generate_and_train_model():
-    np.random.seed(42)
+    # np.random.seed(42)  <-- This line was removed
     units_sold_data = np.random.normal(loc=500, scale=150, size=500).astype(int)
     units_sold_data[units_sold_data < 0] = 0
     total_revenue_data = (units_sold_data * 150) + np.random.normal(loc=0, scale=15000, size=500)
