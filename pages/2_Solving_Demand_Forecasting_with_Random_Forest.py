@@ -4,9 +4,10 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
+import seaborn as sns  # <-- This is the new, corrected line
 
 st.set_page_config(
-    page_title="Demand Forecasting - Random Forest"
+    page_title="Demand Forecasting: Random Forest"
 )
 
 st.title("Solving Demand Forecasting with Random Forest")
@@ -36,7 +37,7 @@ st.write("""
 - **Pandas** for data manipulation.
 - **Numpy** for data simulation.
 - **Scikit-learn** for building the Random Forest model.
-- **Matplotlib** for data visualization.
+- **Matplotlib** and **Seaborn** for data visualization.
 """)
 
 # -- Code and Model Demonstration --
@@ -45,26 +46,18 @@ def generate_and_train_model():
     np.random.seed(42)
     units_sold_data = np.random.normal(loc=500, scale=150, size=500).astype(int)
     units_sold_data[units_sold_data < 0] = 0
-
-    # Add a new feature: promotional_campaign (0 or 1)
     promotional_campaign = np.random.choice([0, 1], size=500, p=[0.7, 0.3])
-
-    # Total Revenue now depends on units_sold and the campaign
     total_revenue_data = (units_sold_data * 150) + (promotional_campaign * 20000) + np.random.normal(loc=0, scale=10000, size=500)
-
     df = pd.DataFrame({
         'Units Sold': units_sold_data,
         'Promotional Campaign': promotional_campaign,
         'Total Revenue': total_revenue_data
     })
-
     X = df[['Units Sold', 'Promotional Campaign']]
     y = df['Total Revenue']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-    
     return model, X, y, df
 
 model, X, y, df = generate_and_train_model()
@@ -88,7 +81,6 @@ st.metric(label=f"Predicted Revenue for {units_sold:,} units", value=f"${predict
 st.subheader("Visualizing the Prediction")
 st.write("This chart shows how the Random Forest model captures the different revenue patterns for promotional and non-promotional campaigns.")
 fig, ax = plt.subplots(figsize=(10, 6))
-
 sns.scatterplot(
     data=df,
     x='Units Sold',
@@ -98,11 +90,9 @@ sns.scatterplot(
     ax=ax,
     s=100
 )
-
 ax.scatter(units_sold, predicted_revenue, color='red', s=200, label='Your Prediction', zorder=5)
 ax.axvline(units_sold, color='red', linestyle='--', linewidth=1)
 ax.axhline(predicted_revenue, color='red', linestyle='--', linewidth=1)
-
 ax.set_title('Simulated Units Sold vs. Total Revenue (Random Forest)')
 ax.set_xlabel('Units Sold')
 ax.set_ylabel('Total Revenue')
