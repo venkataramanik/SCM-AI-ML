@@ -32,8 +32,8 @@ st.write("""
 
 # -- Code and Demonstration --
 @st.cache_data
-def run_simulation(safety_stock):
-    np.random.seed(42)
+def run_simulation(safety_stock, simulation_id):
+    np.random.seed(simulation_id)
     daily_demand = np.random.poisson(lam=50, size=365)
     
     total_inventory = 1000 + safety_stock
@@ -54,24 +54,41 @@ def run_simulation(safety_stock):
             
         inventory_levels.append(total_inventory)
         
-    return total_cost, inventory_levels
+    simulation_data = pd.DataFrame({
+        'Day': range(1, 366),
+        'Daily Demand': daily_demand,
+        'End of Day Inventory': inventory_levels
+    })
+    
+    return total_cost, simulation_data
+
+# Use a button to get new random data
+if st.button("Run New Simulation"):
+    # Clear cache and rerun to generate a new random seed
+    st.session_state['simulation_id'] = np.random.randint(0, 1000000)
+
+if 'simulation_id' not in st.session_state:
+    st.session_state['simulation_id'] = 42 # Default seed
 
 st.subheader("Interactive Stochastic Analysis")
 st.info("Adjust the safety stock to see its effect on total costs and inventory levels over one year of uncertain demand.")
 
 safety_stock = st.slider("Safety Stock Level", min_value=0, max_value=200, value=50)
 
-if st.button("Run Simulation"):
-    total_cost, inventory_levels = run_simulation(safety_stock)
+total_cost, simulation_data = run_simulation(safety_stock, st.session_state['simulation_id'])
 
-    st.metric(label="Total Simulated Cost Over 1 Year", value=f"${total_cost:,.2f}")
+st.metric(label="Total Simulated Cost Over 1 Year", value=f"${total_cost:,.2f}")
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(inventory_levels)
-    ax.axhline(y=safety_stock, color='r', linestyle='--', label='Safety Stock Level')
-    ax.set_title("Inventory Level Over 1 Year with Stochastic Demand")
-    ax.set_xlabel("Day")
-    ax.set_ylabel("Inventory Level")
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(simulation_data['End of Day Inventory'])
+ax.axhline(y=safety_stock, color='r', linestyle='--', label='Safety Stock Level')
+ax.set_title("Inventory Level Over 1 Year with Stochastic Demand")
+ax.set_xlabel("Day")
+ax.set_ylabel("Inventory Level")
+ax.legend()
+ax.grid(True)
+st.pyplot(fig)
+
+st.subheader("Raw Simulation Data")
+st.write("This table shows the daily demand and resulting inventory level for the simulated year.")
+st.dataframe(simulation_data)
