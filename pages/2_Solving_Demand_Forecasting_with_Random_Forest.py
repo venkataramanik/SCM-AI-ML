@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-import seaborn as sns  # <-- This is the new, corrected line
+import seaborn as sns
 
 st.set_page_config(
     page_title="Demand Forecasting: Random Forest"
@@ -22,13 +22,22 @@ While linear regression is a great starting point, real-world demand forecasting
 # -- The Concept: Simulated Data --
 st.subheader("Simulated Data for Our Playground")
 st.write("""
-This project uses a simulated dataset, but this time with an added 'promotional_campaign' feature to show how a more advanced model can handle multiple variables.
+This project uses a simulated dataset, but this time with an added 'promotional_campaign' feature to show how a more advanced model can handle multiple variables. The data is now more realistic, with a clearer distinction between promotional and non-promotional sales.
 """)
 
 # -- Concept Explanation --
 st.subheader("The Concept: Random Forest (Supervised Learning)")
 st.write("""
 The **Random Forest** algorithm is a powerful **Supervised Learning** method that builds multiple "decision trees" and combines their outputs to make a more accurate prediction. Think of it as a committee of experts: each tree analyzes the data differently, and their collective judgment is more robust than any single one. This makes it highly effective at capturing complex, non-linear relationships in the data.
+""")
+
+# -- Industry Applicability Section --
+st.subheader("Industry Applicability")
+st.write("""
+This model is ideal for scenarios where demand is influenced by multiple, complex factors:
+- **Retail & Apparel:** Forecasting sales for trendy or seasonal items where promotions and holidays have a significant, non-linear effect.
+- **Consumer Goods:** Predicting demand for products that see sales spikes due to marketing campaigns, in-store displays, or competitor pricing changes.
+- **Hospitality:** Forecasting hotel room occupancy or restaurant reservations, where factors like weather, local events, and marketing efforts all interact in complex ways.
 """)
 
 # -- Tools Used Section --
@@ -43,11 +52,12 @@ st.write("""
 # -- Code and Model Demonstration --
 @st.cache_data
 def generate_and_train_model():
-    np.random.seed(42)
     units_sold_data = np.random.normal(loc=500, scale=150, size=500).astype(int)
     units_sold_data[units_sold_data < 0] = 0
-    promotional_campaign = np.random.choice([0, 1], size=500, p=[0.7, 0.3])
-    total_revenue_data = (units_sold_data * 150) + (promotional_campaign * 20000) + np.random.normal(loc=0, scale=10000, size=500)
+    promotional_campaign = np.random.choice([0, 1], size=500, p=[0.8, 0.2])
+    base_revenue = units_sold_data * 150
+    promo_uplift = promotional_campaign * (units_sold_data * 50 + np.random.normal(0, 15000, 500))
+    total_revenue_data = base_revenue + promo_uplift + np.random.normal(loc=0, scale=10000, size=500)
     df = pd.DataFrame({
         'Units Sold': units_sold_data,
         'Promotional Campaign': promotional_campaign,
@@ -55,10 +65,14 @@ def generate_and_train_model():
     })
     X = df[['Units Sold', 'Promotional Campaign']]
     y = df['Total Revenue']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    model = RandomForestRegressor(n_estimators=100)
     model.fit(X_train, y_train)
     return model, X, y, df
+
+if st.button("Generate New Data"):
+    st.cache_data.clear()
+    st.rerun()
 
 model, X, y, df = generate_and_train_model()
 
