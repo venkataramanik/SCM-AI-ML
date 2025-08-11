@@ -6,39 +6,42 @@ import time
 
 # --- Configuration ---
 st.set_page_config(
-    page_title="Integrated SCM Simulation",
-    page_icon="🔗",
+    page_title="SCM Persona Simulation",
+    page_icon="👥",
     layout="wide",
 )
 
 # --- State Initialization ---
 if 'simulation_log' not in st.session_state:
     st.session_state.simulation_log = []
-if 'crm_orders' not in st.session_state:
-    st.session_state.crm_orders = []
-if 'erp_production_queue' not in st.session_state:
-    st.session_state.erp_production_queue = []
-if 'wms_inventory' not in st.session_state:
-    st.session_state.wms_inventory = {'raw_materials': 100, 'finished_goods': 20}
-if 'demand_forecast' not in st.session_state:
-    st.session_state.demand_forecast = None
-if 'tms_deliveries' not in st.session_state:
-    st.session_state.tms_deliveries = []
-if 'finance' not in st.session_state:
-    st.session_state.finance = {'cash': 10000, 'revenue': 0, 'cogs': 0}
+if 'inventory' not in st.session_state:
+    st.session_state.inventory = {'raw_materials': 100, 'finished_goods': 50}
+if 'orders' not in st.session_state:
+    st.session_state.orders = []
+if 'transportation' not in st.session_state:
+    st.session_state.transportation = {'deliveries_sent': 0, 'on_time_deliveries': 0, 'total_cost': 0}
+if 'forecast_data' not in st.session_state:
+    st.session_state.forecast_data = {
+        'last_forecast': 60,
+        'actual_demand': 55,
+        'forecast_accuracy': 91.67
+    }
+if 'warehouse_metrics' not in st.session_state:
+    st.session_state.warehouse_metrics = {'orders_picked': 0, 'picking_rate': 0}
 
 # --- Constants ---
-ORDER_SIZE_RANGE = (5, 15)
-RAW_MATERIAL_COST = 5
-FINISHED_GOOD_PRICE = 25
+AVG_ORDER_SIZE = 5
+AVG_PICKING_TIME_PER_UNIT = 0.5 # minutes
+TRANSPORT_COST_PER_UNIT = 2
+ON_TIME_PROBABILITY = 0.9
 
 # --- Helper Functions ---
-def add_log(system, message, level='info'):
+def add_log(persona, message, level='info'):
     """Adds a timestamped message to the simulation log."""
     timestamp = datetime.now().strftime("%H:%M:%S")
     st.session_state.simulation_log.append({
         'timestamp': timestamp,
-        'system': system,
+        'persona': persona,
         'message': message,
         'level': level,
     })
@@ -48,154 +51,136 @@ def reset_simulation():
     st.session_state.clear()
     st.experimental_rerun()
 
-# --- Simulation Logic Functions ---
-def run_demand_forecasting():
-    """Simulates generating a demand forecast for the next period."""
-    add_log("Demand Forecasting", "Generating demand forecast...", 'info')
-    forecast_value = random.randint(30, 80)
-    st.session_state.demand_forecast = forecast_value
-    add_log("Demand Forecasting", f"Forecast for next period: {forecast_value} units. Data sent to ERP.", 'success')
-
-def run_crm():
-    """Simulates a customer placing a new order via the CRM."""
-    order_id = len(st.session_state.crm_orders) + 1
-    order_quantity = random.randint(*ORDER_SIZE_RANGE)
-    new_order = {
-        'order_id': order_id,
-        'quantity': order_quantity,
-        'status': 'New',
-        'revenue': order_quantity * FINISHED_GOOD_PRICE,
-    }
-    st.session_state.crm_orders.append(new_order)
-    add_log("CRM", f"New order #{order_id} for {order_quantity} units received. Order sent to ERP.", 'success')
-
-def run_erp():
-    """ERP acts as the central brain, processing orders and managing flow."""
-    add_log("ERP", "Checking for new orders from CRM...", 'info')
+# --- Persona-Specific Logic ---
+def run_demand_planner_task():
+    """Simulates the Demand Planner's daily task of generating a new forecast."""
+    add_log("Demand Planner", "Generating new forecast...", 'info')
     
-    # Check for new CRM orders
-    new_orders_to_process = [o for o in st.session_state.crm_orders if o['status'] == 'New']
-    for order in new_orders_to_process:
-        add_log("ERP", f"Processing order #{order['order_id']} from CRM. Checking WMS for finished goods.", 'info')
+    # Generate new random actual demand
+    new_actual_demand = random.randint(40, 70)
+    
+    # Generate a new forecast with some random error
+    new_forecast = new_actual_demand + random.randint(-5, 5)
+    
+    # Calculate forecast accuracy
+    forecast_accuracy = (1 - abs(new_actual_demand - new_forecast) / new_actual_demand) * 100
+    
+    st.session_state.forecast_data = {
+        'last_forecast': new_forecast,
+        'actual_demand': new_actual_demand,
+        'forecast_accuracy': round(forecast_accuracy, 2)
+    }
+    
+    add_log("Demand Planner", f"New forecast generated: {new_forecast} units. Actual demand: {new_actual_demand} units. Accuracy: {st.session_state.forecast_data['forecast_accuracy']}%", 'success')
+
+def run_warehouse_manager_task():
+    """Simulates the Warehouse Manager fulfilling orders and receiving goods."""
+    add_log("Warehouse Manager", "Receiving new raw materials...", 'info')
+    raw_material_received = random.randint(50, 100)
+    st.session_state.inventory['raw_materials'] += raw_material_received
+    add_log("Warehouse Manager", f"{raw_material_received} new raw materials received. Inventory updated.", 'success')
+
+    # Fulfill a random number of orders
+    orders_to_fulfill = random.randint(1, 3)
+    orders_fulfilled = 0
+    for _ in range(orders_to_fulfill):
+        if st.session_state.inventory['finished_goods'] >= AVG_ORDER_SIZE:
+            st.session_state.inventory['finished_goods'] -= AVG_ORDER_SIZE
+            st.session_state.orders.append({'id': len(st.session_state.orders) + 1, 'quantity': AVG_ORDER_SIZE, 'status': 'Awaiting Delivery'})
+            orders_fulfilled += 1
+            add_log("Warehouse Manager", f"Order #{len(st.session_state.orders)} fulfilled ({AVG_ORDER_SIZE} units). Ready for transport.", 'success')
+        else:
+            add_log("Warehouse Manager", "Not enough finished goods to fulfill an order.", 'warning')
+
+    if orders_fulfilled > 0:
+        picking_rate = (orders_fulfilled * AVG_ORDER_SIZE) / (orders_fulfilled * AVG_PICKING_TIME_PER_UNIT) # units per minute
+        st.session_state.warehouse_metrics['orders_picked'] += orders_fulfilled
+        st.session_state.warehouse_metrics['picking_rate'] = round(picking_rate * 60, 2) # units per hour
+        add_log("Warehouse Manager", f"{orders_fulfilled} orders picked. Picking rate: {st.session_state.warehouse_metrics['picking_rate']} units/hour.", 'info')
+
+def run_transport_manager_task():
+    """Simulates the Transport Manager optimizing routes and delivering goods."""
+    add_log("Transport Manager", "Checking for orders to deliver...", 'info')
+    
+    orders_to_deliver = [o for o in st.session_state.orders if o['status'] == 'Awaiting Delivery']
+    if not orders_to_deliver:
+        add_log("Transport Manager", "No orders waiting for delivery.", 'warning')
+        return
+
+    add_log("Transport Manager", f"Optimizing routes for {len(orders_to_deliver)} orders...", 'info')
+    
+    for order in orders_to_deliver:
+        # Simulate on-time delivery with a random probability
+        if random.random() < ON_TIME_PROBABILITY:
+            st.session_state.transportation['on_time_deliveries'] += 1
+            add_log("Transport Manager", f"Order #{order['id']} delivered successfully and on-time!", 'success')
+        else:
+            add_log("Transport Manager", f"Order #{order['id']} delivered late.", 'error')
         
-        if st.session_state.wms_inventory['finished_goods'] >= order['quantity']:
-            order['status'] = 'Ready for Delivery'
-            add_log("ERP", f"Order #{order['order_id']} has finished goods in stock. Sending shipping order to TMS.", 'success')
-        else:
-            add_log("ERP", f"Not enough finished goods for order #{order['order_id']}. Checking WMS for raw materials for production.", 'warning')
-            required_raw_materials = order['quantity']
-            
-            if st.session_state.wms_inventory['raw_materials'] >= required_raw_materials:
-                order['status'] = 'In Production Queue'
-                st.session_state.erp_production_queue.append(order)
-                add_log("ERP", f"Raw materials available. Sending production order for #{order['order_id']} to WMS.", 'success')
-            else:
-                add_log("ERP", f"Insufficient raw materials for order #{order['order_id']}. Waiting for raw materials.", 'error')
-                
-    # Check for completed production
-    completed_production_orders = [o for o in st.session_state.erp_production_queue if o['status'] == 'Production Complete']
-    for order in completed_production_orders:
-        order['status'] = 'Ready for Delivery'
-        add_log("ERP", f"Production for order #{order['order_id']} complete. Sending shipping order to TMS.", 'success')
-
-def run_wms():
-    """WMS manages inventory and executes production orders from the ERP."""
-    add_log("WMS", "Checking for new production orders from ERP...", 'info')
-
-    # Execute production orders
-    production_orders = [o for o in st.session_state.erp_production_queue if o['status'] == 'In Production Queue']
-    if not production_orders:
-        add_log("WMS", "No new production orders to process.", 'info')
-        return
-
-    for order in production_orders:
-        required_materials = order['quantity']
-        if st.session_state.wms_inventory['raw_materials'] >= required_materials:
-            add_log("WMS", f"Processing production order for #{order['order_id']}. Pulling {required_materials} raw materials.", 'success')
-            st.session_state.wms_inventory['raw_materials'] -= required_materials
-            
-            # Simulate production time
-            time.sleep(0.5) 
-            st.session_state.wms_inventory['finished_goods'] += required_materials
-            order['status'] = 'Production Complete'
-            add_log("WMS", f"Production for order #{order['order_id']} complete. {required_materials} finished goods added to inventory.", 'success')
-        else:
-            add_log("WMS", f"WMS Error: Not enough raw materials to fulfill production order #{order['order_id']}.", 'error')
-            
-def run_tms():
-    """TMS handles the logistics and delivery of finished goods."""
-    add_log("TMS", "Checking for new shipping orders from ERP...", 'info')
-
-    shipping_orders = [o for o in st.session_state.crm_orders if o['status'] == 'Ready for Delivery']
-    if not shipping_orders:
-        add_log("TMS", "No new shipping orders to process.", 'info')
-        return
-
-    for order in shipping_orders:
-        if st.session_state.wms_inventory['finished_goods'] >= order['quantity']:
-            add_log("TMS", f"Processing shipping order for #{order['order_id']}. Dispatching truck to customer.", 'success')
-            st.session_state.wms_inventory['finished_goods'] -= order['quantity']
-            
-            # Update finance
-            st.session_state.finance['cash'] += order['revenue']
-            st.session_state.finance['revenue'] += order['revenue']
-
-            order['status'] = 'Delivered'
-            st.session_state.tms_deliveries.append(order)
-            add_log("TMS", f"Order #{order['order_id']} successfully delivered. Invoice closed.", 'success')
-        else:
-            add_log("TMS", f"TMS Error: Not enough finished goods in WMS for shipping order #{order['order_id']}.", 'error')
-            order['status'] = 'ERP-Pending-Inventory'
-
+        st.session_state.transportation['deliveries_sent'] += 1
+        st.session_state.transportation['total_cost'] += order['quantity'] * TRANSPORT_COST_PER_UNIT
+        order['status'] = 'Delivered'
+    
+    add_log("Transport Manager", f"{len(orders_to_deliver)} deliveries dispatched. Total cost updated.", 'success')
 
 # --- UI Layout ---
-st.title("🔗 Integrated SCM Simulation Dashboard")
-st.markdown("A demonstration of how CRM, ERP, Demand Forecasting, WMS, and TMS systems interact.")
+st.title("👥 SCM Persona Simulation Dashboard")
+st.markdown("A demonstration of key supply chain personas, their priorities, and their daily operational tasks.")
 
-# --- Key Metrics ---
-st.subheader("Key Performance Indicators")
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    st.metric(label="Cash", value=f"${st.session_state.finance['cash']:.2f}")
-with col2:
-    st.metric(label="Total Revenue", value=f"${st.session_state.finance['revenue']:.2f}")
-with col3:
-    st.metric(label="Open Orders", value=len([o for o in st.session_state.crm_orders if o['status'] != 'Delivered']))
-with col4:
-    st.metric(label="Raw Materials", value=st.session_state.wms_inventory['raw_materials'])
-with col5:
-    st.metric(label="Finished Goods", value=st.session_state.wms_inventory['finished_goods'])
+# --- Persona Tabs ---
+tab1, tab2, tab3 = st.tabs(["🔮 Demand Planner", "📦 Warehouse Manager", "🚚 Transport Manager"])
+
+with tab1:
+    st.header("🔮 Demand Planner Dashboard")
+    st.subheader("Key Performance Indicators")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(label="Forecast Accuracy", value=f"{st.session_state.forecast_data['forecast_accuracy']}%")
+    with col2:
+        st.metric(label="Inventory Turns", value=round(st.session_state.forecast_data['actual_demand'] / (st.session_state.inventory['finished_goods'] + st.session_state.inventory['raw_materials']), 2))
+    st.markdown("---")
+    st.subheader("Daily Task")
+    st.button("Generate New Forecast", on_click=run_demand_planner_task)
+    st.info("The Demand Planner's main task is to predict future demand. This impacts inventory levels and production plans.")
+
+with tab2:
+    st.header("📦 Warehouse Manager Dashboard")
+    st.subheader("Key Performance Indicators")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(label="Order Picking Rate", value=f"{st.session_state.warehouse_metrics['picking_rate']} units/hour")
+    with col2:
+        st.metric(label="Finished Goods Inventory", value=st.session_state.inventory['finished_goods'])
+    st.markdown("---")
+    st.subheader("Daily Task")
+    st.button("Fulfill Orders & Receive Goods", on_click=run_warehouse_manager_task)
+    st.info("The Warehouse Manager focuses on the physical movement of goods, ensuring orders are filled and inventory is accurate.")
+
+with tab3:
+    st.header("🚚 Transport Manager Dashboard")
+    st.subheader("Key Performance Indicators")
+    col1, col2 = st.columns(2)
+    with col1:
+        on_time_rate = (st.session_state.transportation['on_time_deliveries'] / st.session_state.transportation['deliveries_sent']) * 100 if st.session_state.transportation['deliveries_sent'] > 0 else 0
+        st.metric(label="On-Time Delivery Rate", value=f"{round(on_time_rate, 2)}%")
+    with col2:
+        cost_per_unit = st.session_state.transportation['total_cost'] / (st.session_state.transportation['deliveries_sent'] * AVG_ORDER_SIZE) if st.session_state.transportation['deliveries_sent'] > 0 else 0
+        st.metric(label="Transport Cost per Unit", value=f"${round(cost_per_unit, 2)}")
+    st.markdown("---")
+    st.subheader("Daily Task")
+    st.button("Optimize Routes & Deliver Shipments", on_click=run_transport_manager_task)
+    st.info("The Transport Manager is responsible for moving goods from the warehouse to the customer, balancing speed and cost.")
 
 st.markdown("---")
 
-# --- Action Buttons ---
-st.subheader("System Actions")
-col_actions = st.columns(6)
-with col_actions[0]:
-    st.button("🔮 Forecast Demand", on_click=run_demand_forecasting)
-with col_actions[1]:
-    st.button("🙋 New CRM Order", on_click=run_crm)
-with col_actions[2]:
-    st.button("🧠 Run ERP", on_click=run_erp)
-with col_actions[3]:
-    st.button("📦 Run WMS", on_click=run_wms)
-with col_actions[4]:
-    st.button("🚚 Run TMS", on_click=run_tms)
-with col_actions[5]:
-    st.button("🔄 Reset", on_click=reset_simulation)
-
-st.markdown("---")
-
-# --- Log and Dataframes ---
-st.subheader("Simulation Log")
-log_df = pd.DataFrame(st.session_state.simulation_log)
-if not log_df.empty:
-    st.dataframe(log_df.set_index('timestamp'), use_container_width=True)
-
-st.subheader("Current Order Status")
-if st.session_state.crm_orders:
-    orders_df = pd.DataFrame(st.session_state.crm_orders)
-    st.dataframe(orders_df, use_container_width=True)
-else:
-    st.info("No orders have been placed yet.")
-
+# --- Central Log ---
+st.subheader("System Log")
+col_log, col_reset = st.columns([4, 1])
+with col_reset:
+    st.button("🔄 Reset Simulation", on_click=reset_simulation)
+with col_log:
+    if st.session_state.simulation_log:
+        log_df = pd.DataFrame(st.session_state.simulation_log)
+        st.dataframe(log_df.set_index('timestamp'), use_container_width=True, height=250)
+    else:
+        st.info("Click on a Persona's 'Daily Task' button to start the simulation!")
