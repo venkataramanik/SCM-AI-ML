@@ -214,10 +214,12 @@ def run_procurement_agent():
             
             # Higher risk score means lower chance of success
             if random.random() > st.session_state.kpis['risk_exposure_score'][-1] / 100.0:
-                # Apply learning bonus to agent's impact
-                learning_bonus = st.session_state.agent_states['learning'][event_name] * 0.5
+                # Use .get() with a default value to prevent KeyError
+                learning_bonus = st.session_state.agent_states['learning'].get(event_name, 0) * 0.5
                 add_log("ProcurementAgent", f"Successfully found an alternative supplier. Learning improved for '{event_name}'.", 'success')
-                st.session_state.agent_states['learning'][event_name] += 1
+                # Only increment if the key exists
+                if event_name in st.session_state.agent_states['learning']:
+                    st.session_state.agent_states['learning'][event_name] += 1
                 
                 impacts['on_time'] += random.uniform(BASE_AGENT_IMPACTS['procurement']['on_time'][0] + learning_bonus, BASE_AGENT_IMPACTS['procurement']['on_time'][1] + learning_bonus)
                 impacts['cost'] += random.uniform(BASE_AGENT_IMPACTS['procurement']['cost'][0], BASE_AGENT_IMPACTS['procurement']['cost'][1])
@@ -254,10 +256,12 @@ def run_logistics_agent():
             
             # Chance of successful reroute
             if random.random() < 0.7:
-                # Apply learning bonus to agent's impact
-                learning_bonus = st.session_state.agent_states['learning'][event_name] * 0.5
+                # Use .get() with a default value to prevent KeyError
+                learning_bonus = st.session_state.agent_states['learning'].get(event_name, 0) * 0.5
                 add_log("LogisticsAgent", f"Rerouting successful. Learning improved for '{event_name}'.", 'success')
-                st.session_state.agent_states['learning'][event_name] += 1
+                # Only increment if the key exists
+                if event_name in st.session_state.agent_states['learning']:
+                    st.session_state.agent_states['learning'][event_name] += 1
 
                 impacts['on_time'] += random.uniform(BASE_AGENT_IMPACTS['logistics']['on_time'][0] + learning_bonus, BASE_AGENT_IMPACTS['logistics']['on_time'][1] + learning_bonus)
                 impacts['cost'] += random.uniform(BASE_AGENT_IMPACTS['logistics']['cost'][0], BASE_AGENT_IMPACTS['logistics']['cost'][1])
@@ -312,8 +316,19 @@ st.sidebar.markdown("""
 """)
 
 st.header("Simulation Dashboard")
-df_metrics = pd.DataFrame(st.session_state.kpis)
 
+st.markdown("---")
+# --- Central Log ---
+st.subheader("Agent & Event Log")
+if st.session_state.simulation_log:
+    log_df = pd.DataFrame(st.session_state.simulation_log)
+    st.dataframe(log_df.set_index('timestamp'), use_container_width=True, height=250)
+else:
+    st.info("Click 'Start Simulation' to begin.")
+
+st.markdown("---")
+st.subheader("Performance Trends Over Time")
+df_metrics = pd.DataFrame(st.session_state.kpis)
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric(label="✅ On-Time Delivery Rate", value=f"{df_metrics['on_time_delivery_rate'].iloc[-1]:.2f}%")
@@ -325,20 +340,10 @@ with col4:
     st.metric(label="🚨 Risk Exposure Score", value=f"{df_metrics['risk_exposure_score'].iloc[-1]:.2f}")
 
 # --- Charts ---
-st.subheader("Performance Trends Over Time")
 fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
                       title='Supply Chain KPIs Over Time', markers=True)
 fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
 st.plotly_chart(fig_metrics, use_container_width=True)
-
-st.markdown("---")
-# --- Central Log ---
-st.subheader("Agent & Event Log")
-if st.session_state.simulation_log:
-    log_df = pd.DataFrame(st.session_state.simulation_log)
-    st.dataframe(log_df.set_index('timestamp'), use_container_width=True, height=250)
-else:
-    st.info("Click 'Start Simulation' to begin.")
 
 # --- The Simulation Loop ---
 if st.session_state.simulation_running:
