@@ -31,7 +31,6 @@ st.write("""
 """)
 
 # -- Code and Demonstration --
-@st.cache_data
 def run_simulation(safety_stock, simulation_id):
     np.random.seed(simulation_id)
     daily_demand = np.random.poisson(lam=50, size=365)
