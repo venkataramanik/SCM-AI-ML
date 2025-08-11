@@ -18,10 +18,15 @@ st.write("""
 Most business data, especially in supply chain, is time-series data with trends, seasonality, and cycles. Simple models may fail to capture these patterns, leading to less accurate forecasts.
 """)
 
-# -- The Concept: Simulated Time Series Data --
+# -- Simulated Time Series Data --
 st.subheader("Simulated Time Series Data")
 st.write("""
 For this project, we've simulated a time-series dataset that mimics real sales data with an upward trend and a clear seasonal pattern, making it a much better fit for an ARIMA model.
+""")
+
+# -- ARIMA Model Explanation --
+st.write("""
+The **ARIMA** (AutoRegressive Integrated Moving Average) model is a powerful statistical tool for time-series forecasting. It uses historical data to identify and model the patterns of a time series, enabling accurate predictions of future values based on past behavior.
 """)
 
 # -- Tools Used Section --
