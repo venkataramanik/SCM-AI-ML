@@ -21,7 +21,7 @@ Reinforcement Learning offers a dynamic approach to complex supply chain problem
 """)
 
 # -- The Concept: Reinforcement Learning --
-st.subheader("Reinforcement Learning")
+st.subheader("The Concept: Reinforcement Learning")
 st.write("""
 We'll train an **RL agent** to manage an inventory system. The agent's goal is to learn a policy that minimizes total costs by balancing the cost of holding inventory with the cost of stockouts. The agent learns by receiving **rewards** (penalties for costs) and adjusting its behavior over thousands of simulated inventory cycles.
 """)
@@ -92,7 +92,7 @@ def train_ppo_agent(total_timesteps):
     st.write("Training complete!")
     return model
 
-@st.cache_data
+# NOTE: No caching decorators on these simulation functions
 def simulate_policy(model, env, num_episodes=5):
     all_costs = []
     for _ in range(num_episodes):
@@ -108,7 +108,6 @@ def simulate_policy(model, env, num_episodes=5):
     
     return all_costs
 
-@st.cache_data
 def simulate_baseline(env, num_episodes=5):
     all_costs = []
     for _ in range(num_episodes):
