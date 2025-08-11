@@ -29,7 +29,6 @@ if 'finance' not in st.session_state:
 
 # --- Constants ---
 ORDER_SIZE_RANGE = (5, 15)
-PRODUCTION_TIME = 2  # Simulated production time in seconds
 RAW_MATERIAL_COST = 5
 FINISHED_GOOD_PRICE = 25
 
@@ -45,15 +44,8 @@ def add_log(system, message, level='info'):
     })
 
 def reset_simulation():
-    """Resets all simulation state to its initial values."""
-    st.session_state.simulation_log = []
-    st.session_state.crm_orders = []
-    st.session_state.erp_production_queue = []
-    st.session_state.wms_inventory = {'raw_materials': 100, 'finished_goods': 20}
-    st.session_state.demand_forecast = None
-    st.session_state.tms_deliveries = []
-    st.session_state.finance = {'cash': 10000, 'revenue': 0, 'cogs': 0}
-    add_log("System", "Simulation reset.", 'info')
+    """Resets all simulation state to its initial values and re-runs the app."""
+    st.session_state.clear()
     st.experimental_rerun()
 
 # --- Simulation Logic Functions ---
@@ -82,29 +74,29 @@ def run_erp():
     add_log("ERP", "Checking for new orders from CRM...", 'info')
     
     # Check for new CRM orders
-    for order in st.session_state.crm_orders:
-        if order['status'] == 'New':
-            add_log("ERP", f"Processing order #{order['order_id']} from CRM. Checking WMS for finished goods.", 'info')
-            
-            if st.session_state.wms_inventory['finished_goods'] >= order['quantity']:
-                order['status'] = 'Ready for Delivery'
-                add_log("ERP", f"Order #{order['order_id']} has finished goods in stock. Sending shipping order to TMS.", 'success')
-            else:
-                add_log("ERP", f"Not enough finished goods for order #{order['order_id']}. Checking WMS for raw materials for production.", 'warning')
-                required_raw_materials = order['quantity']
-                
-                if st.session_state.wms_inventory['raw_materials'] >= required_raw_materials:
-                    order['status'] = 'In Production Queue'
-                    st.session_state.erp_production_queue.append(order)
-                    add_log("ERP", f"Raw materials available. Sending production order for #{order['order_id']} to WMS.", 'success')
-                else:
-                    add_log("ERP", f"Insufficient raw materials for order #{order['order_id']}. Waiting for raw materials.", 'error')
-                    
-    # Check for completed production
-    for order in st.session_state.erp_production_queue:
-        if order['status'] == 'Production Complete':
+    new_orders_to_process = [o for o in st.session_state.crm_orders if o['status'] == 'New']
+    for order in new_orders_to_process:
+        add_log("ERP", f"Processing order #{order['order_id']} from CRM. Checking WMS for finished goods.", 'info')
+        
+        if st.session_state.wms_inventory['finished_goods'] >= order['quantity']:
             order['status'] = 'Ready for Delivery'
-            add_log("ERP", f"Production for order #{order['order_id']} complete. Sending shipping order to TMS.", 'success')
+            add_log("ERP", f"Order #{order['order_id']} has finished goods in stock. Sending shipping order to TMS.", 'success')
+        else:
+            add_log("ERP", f"Not enough finished goods for order #{order['order_id']}. Checking WMS for raw materials for production.", 'warning')
+            required_raw_materials = order['quantity']
+            
+            if st.session_state.wms_inventory['raw_materials'] >= required_raw_materials:
+                order['status'] = 'In Production Queue'
+                st.session_state.erp_production_queue.append(order)
+                add_log("ERP", f"Raw materials available. Sending production order for #{order['order_id']} to WMS.", 'success')
+            else:
+                add_log("ERP", f"Insufficient raw materials for order #{order['order_id']}. Waiting for raw materials.", 'error')
+                
+    # Check for completed production
+    completed_production_orders = [o for o in st.session_state.erp_production_queue if o['status'] == 'Production Complete']
+    for order in completed_production_orders:
+        order['status'] = 'Ready for Delivery'
+        add_log("ERP", f"Production for order #{order['order_id']} complete. Sending shipping order to TMS.", 'success')
 
 def run_wms():
     """WMS manages inventory and executes production orders from the ERP."""
@@ -123,7 +115,7 @@ def run_wms():
             st.session_state.wms_inventory['raw_materials'] -= required_materials
             
             # Simulate production time
-            time.sleep(1) 
+            time.sleep(0.5) 
             st.session_state.wms_inventory['finished_goods'] += required_materials
             order['status'] = 'Production Complete'
             add_log("WMS", f"Production for order #{order['order_id']} complete. {required_materials} finished goods added to inventory.", 'success')
