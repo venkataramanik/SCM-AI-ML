@@ -82,6 +82,7 @@ BOOST_MULTIPLIER = 1.5
 def add_log(agent, message, level='info'):
     """Adds a timestamped message to the simulation log."""
     st.session_state.simulation_log.append({
+        'day': st.session_state.day,
         'agent': agent,
         'message': message,
         'level': level,
@@ -382,41 +383,15 @@ st.markdown("---")
 
 st.subheader("Agent & Event Log")
 
-# --- Central Log (Scrollable Container) ---
+# --- Central Log (Scrollable Container with DataFrame) ---
 log_container = st.container(height=300)
 with log_container:
-    # Display the log in reverse chronological order
-    for log_entry in reversed(st.session_state.simulation_log):
-        agent = log_entry['agent']
-        message = log_entry['message']
-        level = log_entry['level']
-        
-        # Determine a simple text avatar URL based on the agent name
-        avatar_url = ""
-        if agent == "System":
-            avatar_url = "https://placehold.co/40x40/dddddd/000000?text=SYS"
-        elif agent == "Human":
-            avatar_url = "https://placehold.co/40x40/3366ff/ffffff?text=HUM"
-        elif agent == "DemandForecastAgent":
-            avatar_url = "https://placehold.co/40x40/4CAF50/ffffff?text=DF"
-        elif agent == "ProcurementAgent":
-            avatar_url = "https://placehold.co/40x40/FFC107/000000?text=PRO"
-        elif agent == "LogisticsAgent":
-            avatar_url = "https://placehold.co/40x40/FF5722/ffffff?text=LOG"
-        else:
-            avatar_url = "https://placehold.co/40x40/f44336/ffffff?text=UNK"
-
-        with st.chat_message(name=agent, avatar=avatar_url):
-            if level == "warning":
-                st.warning(message)
-            elif level == "error":
-                st.error(message)
-            elif level == "success":
-                st.success(message)
-            elif level == "critical":
-                st.exception(Exception(message))
-            else:
-                st.info(message)
+    if st.session_state.simulation_log:
+        df_log = pd.DataFrame(st.session_state.simulation_log)
+        # Sort by day in descending order to show latest logs first
+        st.dataframe(df_log.sort_values(by='day', ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("Simulation log is currently empty.")
 st.markdown("---")
 
 st.subheader("Performance Trends Over Time")
