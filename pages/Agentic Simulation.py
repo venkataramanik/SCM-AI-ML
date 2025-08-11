@@ -376,7 +376,7 @@ with col3:
     st.metric(label="Inventory Days", value=f"{df_metrics['inventory_days_of_supply'].iloc[-1]:.2f} days")
 with col4:
     # Use a different display for Active Agent Boost to prevent text cutoff
-    st.markdown(f"**Active Agent Boost** <br> {st.session_state.agent_boost if st.session_state.agent_boost else 'None'}")
+    st.markdown(f"**Active Agent Boost:** {st.session_state.agent_boost if st.session_state.agent_boost else 'None'}")
     
 st.markdown("---")
 
