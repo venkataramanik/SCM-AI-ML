@@ -21,7 +21,7 @@ Reinforcement Learning offers a dynamic approach to complex supply chain problem
 """)
 
 # -- The Concept: Reinforcement Learning --
-st.subheader("The Concept: Reinforcement Learning")
+st.subheader("Reinforcement Learning")
 st.write("""
 We'll train an **RL agent** to manage an inventory system. The agent's goal is to learn a policy that minimizes total costs by balancing the cost of holding inventory with the cost of stockouts. The agent learns by receiving **rewards** (penalties for costs) and adjusting its behavior over thousands of simulated inventory cycles.
 """)
