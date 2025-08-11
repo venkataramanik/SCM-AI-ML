@@ -369,54 +369,61 @@ st.header("Simulation Dashboard")
 df_metrics = pd.DataFrame(st.session_state.kpis)
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    st.metric(label="✅ On-Time Delivery Rate", value=f"{df_metrics['on_time_delivery_rate'].iloc[-1]:.2f}%")
+    st.metric(label="On-Time Delivery Rate", value=f"{df_metrics['on_time_delivery_rate'].iloc[-1]:.2f}%")
 with col2:
-    st.metric(label="💵 Supply Chain Cost", value=f"${df_metrics['supply_chain_cost'].iloc[-1]:.2f}")
+    st.metric(label="Supply Chain Cost", value=f"${df_metrics['supply_chain_cost'].iloc[-1]:.2f}")
 with col3:
-    st.metric(label="📦 Inventory Days", value=f"{df_metrics['inventory_days_of_supply'].iloc[-1]:.2f} days")
+    st.metric(label="Inventory Days", value=f"{df_metrics['inventory_days_of_supply'].iloc[-1]:.2f} days")
 with col4:
-    st.metric(label="🚨 Risk Exposure Score", value=f"{df_metrics['risk_exposure_score'].iloc[-1]:.2f}")
+    st.metric(label="Risk Exposure Score", value=f"{df_metrics['risk_exposure_score'].iloc[-1]:.2f}")
 with col5:
-    st.metric(label="🚀 Active Agent Boost", value=st.session_state.agent_boost if st.session_state.agent_boost else "None")
+    st.metric(label="Active Agent Boost", value=st.session_state.agent_boost if st.session_state.agent_boost else "None")
 
 st.markdown("---")
 
-# --- Central Log (Graphical) ---
 st.subheader("Agent & Event Log")
-for log_entry in st.session_state.simulation_log:
-    agent = log_entry['agent']
-    message = log_entry['message']
-    level = log_entry['level']
-    
-    if agent == "System":
-        avatar_icon = "⚙️"
-    elif agent == "Human":
-        avatar_icon = "👨‍💼"
-    elif agent == "DemandForecastAgent":
-        avatar_icon = "📈"
-    elif agent == "ProcurementAgent":
-        avatar_icon = "💰"
-    elif agent == "LogisticsAgent":
-        avatar_icon = "🚚"
-    else:
-        avatar_icon = "❓"
 
-    with st.chat_message(name=agent, avatar=avatar_icon):
-        if level == "warning":
-            st.warning(message)
-        elif level == "error":
-            st.error(message)
-        elif level == "success":
-            st.success(message)
-        elif level == "critical":
-            st.exception(Exception(message))
+# --- Central Log (Scrollable Container) ---
+log_container = st.container(height=300)
+with log_container:
+    # Display the log in reverse chronological order
+    for log_entry in reversed(st.session_state.simulation_log):
+        agent = log_entry['agent']
+        message = log_entry['message']
+        level = log_entry['level']
+        
+        # Determine a simple text avatar based on the agent name
+        avatar_text = ""
+        if agent == "System":
+            avatar_text = "System"
+        elif agent == "Human":
+            avatar_text = "Human"
+        elif agent == "DemandForecastAgent":
+            avatar_text = "Demand"
+        elif agent == "ProcurementAgent":
+            avatar_text = "Procurement"
+        elif agent == "LogisticsAgent":
+            avatar_text = "Logistics"
         else:
-            st.info(message)
+            avatar_text = "Unknown"
+
+        with st.chat_message(name=agent, avatar=avatar_text):
+            if level == "warning":
+                st.warning(message)
+            elif level == "error":
+                st.error(message)
+            elif level == "success":
+                st.success(message)
+            elif level == "critical":
+                st.exception(Exception(message))
+            else:
+                st.info(message)
 st.markdown("---")
 
 st.subheader("Performance Trends Over Time")
 
 # --- Charts ---
+df_metrics = pd.DataFrame(st.session_state.kpis)
 fig_metrics = px.line(df_metrics, x='day', y=df_metrics.columns[1:],
                       title='Supply Chain KPIs Over Time', markers=True)
 fig_metrics.update_layout(yaxis_title="Value", legend_title="KPIs")
