@@ -75,7 +75,8 @@ st.metric(label="Total Simulated Cost Over 1 Year", value=f"${total_cost:,.2f}")
 
 if st.button("Run New Simulation"):
     st.session_state.simulation_id = np.random.randint(0, 1_000_000)
-    st.experimental_rerun()
+st.rerun()
+
 
 fig, ax = plt.subplots(figsize=(10, 6))
 ax.plot(simulation_data['End of Day Inventory'])
