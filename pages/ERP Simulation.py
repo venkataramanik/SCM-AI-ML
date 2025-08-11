@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import random
+import time
 
 # --- Configuration ---
 st.set_page_config(
