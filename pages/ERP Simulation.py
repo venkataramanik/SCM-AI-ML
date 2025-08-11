@@ -1,325 +1,191 @@
-# app.py
-# Streamlit SCOR ERP Simulator (Plan–Source–Make–Deliver–Return–Enable)
-# Drop this file next to a folder named `SCOR_Sim_v1` containing the CSVs listed below.
-# Run:  streamlit run app.py
-
-import os
-import time
-from datetime import timedelta
-import numpy as np
-import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+import pandas as pd
+from datetime import datetime
+import random
+import plotly.express as px
 
-st.set_page_config(page_title="SCOR ERP Simulator", layout="wide")
+# --- Configuration ---
+st.set_page_config(
+    page_title="SCM C-Suite Simulation: AI/ML & Security",
+    page_icon="👑",
+    layout="wide",
+)
 
-# ---------- Utilities ----------
-@st.cache_data
-def load_csv(path, **kwargs):
-    return pd.read_csv(path, **kwargs)
+# --- State Initialization ---
+if 'simulation_log' not in st.session_state:
+    st.session_state.simulation_log = []
+if 'csuite_metrics' not in st.session_state:
+    st.session_state.csuite_metrics = {
+        'days': [0],
+        'profitability': [1000],
+        'operational_efficiency': [85],
+        'customer_satisfaction': [90],
+    }
+if 'day' not in st.session_state:
+    st.session_state.day = 0
 
-def ensure_paths(base_path):
-    needed = [
-        "items.csv","boms.csv","work_centers.csv","routings.csv",
-        "suppliers.csv","transport_lanes.csv","policies.csv",
-        "inventories.csv","demand_forecast.csv","customer_orders.csv",
-        "kpi_targets.csv"
-    ]
-    missing = [f for f in needed if not os.path.exists(os.path.join(base_path,f))]
-    return missing
+# --- Constants ---
+BASELINE_PROFIT = 100
+BASELINE_OP_EFFICIENCY = 80
+BASELINE_CUST_SAT = 85
+AI_IMPACT_PROFIT_MIN = 20
+AI_IMPACT_PROFIT_MAX = 50
+AI_IMPACT_OP_EFFICIENCY_MIN = 5
+AI_IMPACT_OP_EFFICIENCY_MAX = 10
+AI_IMPACT_CUST_SAT_MIN = 3
+AI_IMPACT_CUST_SAT_MAX = 8
 
-# ---------- Simulation Core ----------
-def place_po(item_id, qty, today, inbound, lane_choice="auto"):
-    # Simple mapping of suppliers and lanes
-    if item_id == "RM-10":
-        supplier_id = "SUP-IN-01"; lane = "IN-US-Ocean"; lt=14
-    elif item_id == "RM-20":
-        supplier_id = "SUP-IN-02"; lane = "IN-US-Ocean"; lt=18
-    else:
-        supplier_id = "SUP-CN-01"; lane = "CN-US-Ocean"; lt=20
+# --- Helper Functions ---
+def add_log(persona, message, level='info'):
+    """Adds a timestamped message to the simulation log."""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    st.session_state.simulation_log.append({
+        'timestamp': timestamp,
+        'persona': persona,
+        'message': message,
+        'level': level,
+    })
 
-    # Transit times (ocean vs air)
-    if lane_choice == "air":
-        transit = 5 if "CN" in lane else 6
-    else:
-        transit = 28 if "CN" in lane else 30
+def advance_day(profit_change, efficiency_change, satisfaction_change, event_desc):
+    """Advances the simulation by one day with new metrics."""
+    st.session_state.day += 1
+    current_profit = st.session_state.csuite_metrics['profitability'][-1] + profit_change
+    current_efficiency = st.session_state.csuite_metrics['operational_efficiency'][-1] + efficiency_change
+    current_satisfaction = st.session_state.csuite_metrics['customer_satisfaction'][-1] + satisfaction_change
 
-    arrival = today + pd.Timedelta(days=lt + transit)
-    inbound.append((item_id, int(qty), arrival))
-    return inbound
+    st.session_state.csuite_metrics['days'].append(st.session_state.day)
+    st.session_state.csuite_metrics['profitability'].append(max(0, current_profit))
+    st.session_state.csuite_metrics['operational_efficiency'].append(min(100, max(0, current_efficiency)))
+    st.session_state.csuite_metrics['customer_satisfaction'].append(min(100, max(0, current_satisfaction)))
+    
+    add_log("System", f"Day {st.session_state.day}: {event_desc}", 'info')
 
-def run_sim(
-    base_path,
-    horizon_days=90,
-    demand_surge_pct=0.0,
-    supplier_delay_days=0,
-    expedite_threshold=0.0,
-    apply_capacity=False,
-    asm_capacity=800,
-    test_capacity=700,
-    ss_multiplier=1.0,
-    random_seed=42
-):
-    np.random.seed(random_seed)
+def reset_simulation():
+    """Resets all simulation state to its initial values."""
+    st.session_state.clear()
+    st.experimental_rerun()
 
-    items = load_csv(os.path.join(base_path,"items.csv"))
-    boms = load_csv(os.path.join(base_path,"boms.csv"))
-    work_centers = load_csv(os.path.join(base_path,"work_centers.csv"))
-    routings = load_csv(os.path.join(base_path,"routings.csv"))
-    suppliers = load_csv(os.path.join(base_path,"suppliers.csv"))
-    transport_lanes = load_csv(os.path.join(base_path,"transport_lanes.csv"))
-    policies = load_csv(os.path.join(base_path,"policies.csv")).set_index("item_id").to_dict("index")
-    inventories_df = load_csv(os.path.join(base_path,"inventories.csv"))
-    demand_forecast = load_csv(os.path.join(base_path,"demand_forecast.csv"), parse_dates=["date"])
-    orders = load_csv(os.path.join(base_path,"customer_orders.csv"), parse_dates=["date"]).copy()
+# --- Persona-Specific Actions ---
+def run_ai_forecasting():
+    """Simulates implementing AI-driven forecasting."""
+    profit_boost = random.randint(AI_IMPACT_PROFIT_MIN, AI_IMPACT_PROFIT_MAX)
+    efficiency_boost = random.randint(AI_IMPACT_OP_EFFICIENCY_MIN - 2, AI_IMPACT_OP_EFFICIENCY_MAX - 2)
+    satisfaction_boost = random.randint(AI_IMPACT_CUST_SAT_MIN - 2, AI_IMPACT_CUST_SAT_MAX - 2)
+    advance_day(profit_boost, efficiency_boost, satisfaction_boost, "AI-Driven forecasting implemented, improving sales and reducing inventory costs.")
+    add_log("C-Suite", "Decision: Implemented AI-Driven Forecasting. Saw positive impact on Profitability and Efficiency.", 'success')
 
-    # Demand surge
-    if demand_surge_pct != 0.0:
-        factor = 1.0 + demand_surge_pct/100.0
-        orders["order_qty"] = (orders["order_qty"] * factor).round().astype(int)
+def run_ai_logistics():
+    """Simulates implementing AI-driven logistics."""
+    profit_boost = random.randint(AI_IMPACT_PROFIT_MIN - 5, AI_IMPACT_PROFIT_MAX - 5)
+    efficiency_boost = random.randint(AI_IMPACT_OP_EFFICIENCY_MIN, AI_IMPACT_OP_EFFICIENCY_MAX)
+    satisfaction_boost = random.randint(AI_IMPACT_CUST_SAT_MIN, AI_IMPACT_CUST_SAT_MAX)
+    advance_day(profit_boost, efficiency_boost, satisfaction_boost, "AI-Driven logistics optimization reduces fuel costs and improves delivery times.")
+    add_log("C-Suite", "Decision: Implemented AI-Driven Logistics. Saw significant boost in Efficiency and Customer Satisfaction.", 'success')
 
-    # Due dates and shipment fields
-    orders["due_date"] = orders["date"] + pd.to_timedelta(
-        np.random.choice([3,5,7], size=len(orders), p=[0.4,0.4,0.2]), unit="D"
-    )
-    orders["shipped_qty"] = 0
-    orders.loc[:, "ship_date"] = pd.NaT
+def run_ai_supplier_risk():
+    """Simulates implementing AI-driven supplier risk analysis."""
+    profit_boost = random.randint(AI_IMPACT_PROFIT_MIN - 10, AI_IMPACT_PROFIT_MAX - 10)
+    efficiency_boost = random.randint(AI_IMPACT_OP_EFFICIENCY_MIN - 5, AI_IMPACT_OP_EFFICIENCY_MAX - 5)
+    satisfaction_boost = random.randint(AI_IMPACT_CUST_SAT_MIN - 5, AI_IMPACT_CUST_SAT_MAX - 5)
+    advance_day(profit_boost, efficiency_boost, satisfaction_boost, "AI-driven supplier risk analysis helps avoid disruptions and maintain business continuity.")
+    add_log("C-Suite", "Decision: Implemented AI-driven supplier risk analysis. Mitigated risk, ensuring stability.", 'success')
 
-    # Inventory dict
-    inv = inventories_df.set_index(["item_id","location"])["on_hand"].to_dict()
+def run_integrated_data_platform():
+    """Simulates implementing an integrated data platform."""
+    profit_boost = random.randint(AI_IMPACT_PROFIT_MIN - 15, AI_IMPACT_PROFIT_MAX - 15)
+    efficiency_boost = random.randint(AI_IMPACT_OP_EFFICIENCY_MIN + 2, AI_IMPACT_OP_EFFICIENCY_MAX + 2)
+    satisfaction_boost = random.randint(AI_IMPACT_CUST_SAT_MIN - 5, AI_IMPACT_CUST_SAT_MAX - 5)
+    advance_day(profit_boost, efficiency_boost, satisfaction_boost, "CIO decision: Implementing an integrated data platform, improving data flow and efficiency.")
+    add_log("C-Suite", "Decision: Implemented Integrated Data Platform. Saw a strong boost in Operational Efficiency.", 'success')
 
-    # Simple cost model
-    sales_price = {"FG-100":120.0, "FG-200":140.0}
-    unit_cost_rm = {"RM-10":10.0, "RM-20":5.0, "RM-30":20.0}
-    logistics_cost = 0.0
-    revenue = 0.0
-    cogs = 0.0
+def run_ai_security_platform():
+    """Simulates implementing an AI-driven security platform."""
+    profit_boost = random.randint(AI_IMPACT_PROFIT_MIN - 10, AI_IMPACT_PROFIT_MAX - 10)
+    efficiency_boost = random.randint(AI_IMPACT_OP_EFFICIENCY_MIN - 2, AI_IMPACT_OP_EFFICIENCY_MAX - 2)
+    satisfaction_boost = random.randint(AI_IMPACT_CUST_SAT_MIN + 2, AI_IMPACT_CUST_SAT_MAX + 2)
+    advance_day(profit_boost, efficiency_boost, satisfaction_boost, "CISO decision: Implementing AI-driven security to protect supply chain data.")
+    add_log("C-Suite", "Decision: Implemented AI-Driven Security Platform. Saw a boost in Customer Satisfaction and mitigated risk.", 'success')
+    
+def run_ai_supply_chain_optimization():
+    """Simulates implementing end-to-end AI supply chain optimization."""
+    profit_boost = random.randint(AI_IMPACT_PROFIT_MIN + 5, AI_IMPACT_PROFIT_MAX + 5)
+    efficiency_boost = random.randint(AI_IMPACT_OP_EFFICIENCY_MIN + 5, AI_IMPACT_OP_EFFICIENCY_MAX + 5)
+    satisfaction_boost = random.randint(AI_IMPACT_CUST_SAT_MIN + 5, AI_IMPACT_CUST_SAT_MAX + 5)
+    advance_day(profit_boost, efficiency_boost, satisfaction_boost, "CSCO decision: Implementing end-to-end AI supply chain optimization for resilience and efficiency.")
+    add_log("C-Suite", "Decision: Implemented End-to-End AI Supply Chain Optimization. Saw a significant boost across all metrics.", 'success')
 
-    # Inbound pipeline
-    inbound = []
+def run_business_as_usual():
+    """Simulates a day with no AI/ML implementation."""
+    profit_change = random.randint(-15, 10)
+    efficiency_change = random.randint(-5, 3)
+    satisfaction_change = random.randint(-5, 2)
+    advance_day(profit_change, efficiency_change, satisfaction_change, "Business as usual. Small fluctuations in metrics.")
+    add_log("C-Suite", "Decision: No new AI/ML initiatives. Metrics fluctuate based on market conditions.", 'warning')
 
-    # Timeline
-    start_date = orders["date"].min()
-    end_date = start_date + pd.Timedelta(days=horizon_days)
+# --- UI Layout ---
+st.title("👑 SCM C-Suite Simulation: AI/ML & Security Impact")
+st.markdown("Simulate strategic decisions and observe their impact on key C-level metrics.")
 
-    # Capacity per WC (hrs/day)
-    wc_caps = {"WC-ASM": asm_capacity, "WC-TEST": test_capacity}
+st.sidebar.header("C-Suite Personas")
+st.sidebar.markdown("""
+- **CEO:** Driven by **Growth** & **Customer Satisfaction**.
+- **CFO:** Driven by **Profitability** & **Working Capital**.
+- **COO:** Driven by **Operational Efficiency** & **Resilience**.
+- **CIO:** Driven by **Technology Adoption** & **Data Integration**.
+- **CISO:** Driven by **Risk Mitigation** & **Data Security**.
+- **CSCO:** Driven by **End-to-End Visibility** & **SCM Resilience**.
+""")
 
-    kpi_records = []
+st.sidebar.button("🔄 Reset Simulation", on_click=reset_simulation)
+st.sidebar.markdown("---")
 
-    # Precompute routing hours per unit
-    rt_map = routings.groupby("item_id").apply(lambda g: g["std_hours_per_unit"].sum()).to_dict()
+st.header("Strategic Decisions")
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
-    supplier_delay_days = int(supplier_delay_days)
+with col1:
+    st.button("🔮 AI Forecasting", on_click=run_ai_forecasting)
+with col2:
+    st.button("🚚 AI Logistics", on_click=run_ai_logistics)
+with col3:
+    st.button("📝 AI Supplier Risk", on_click=run_ai_supplier_risk)
+with col4:
+    st.button("🌐 Data Platform", on_click=run_integrated_data_platform)
+with col5:
+    st.button("🛡️ AI Security", on_click=run_ai_security_platform)
+with col6:
+    st.button("🔗 AI SCM Optimization", on_click=run_ai_supply_chain_optimization)
+with col7:
+    st.button("📊 Business as Usual", on_click=run_business_as_usual)
+st.markdown("---")
 
-    while start_date < end_date:
-        # Receive inbound (apply supplier delay)
-        received_today = [x for x in inbound if (x[2] + pd.Timedelta(days=supplier_delay_days)).date() == start_date.date()]
-        for (itm, q, _) in received_today:
-            inv[(itm,"MAIN")] = inv.get((itm,"MAIN"), 0) + q
-        inbound = [x for x in inbound if x not in received_today]
+# --- Dashboard Metrics ---
+st.header("C-Suite Dashboard")
+df_metrics = pd.DataFrame(st.session_state.csuite_metrics)
 
-        # PLAN: RM reorder
-        for rm in ["RM-10","RM-20","RM-30"]:
-            lvl = inv.get((rm,"MAIN"), 0)
-            pol = policies.get(rm, {})
-            rpoint = pol.get("reorder_point", 0)
-            ss = pol.get("safety_stock", 0) * ss_multiplier
-            if lvl < rpoint:
-                qty = int(ss + rpoint - lvl + 1000)
-                inbound = place_po(rm, qty, start_date, inbound, lane_choice="auto")
-                logistics_cost += 0.05*qty  # placeholder
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric(label="📊 Profitability", value=f"${df_metrics['profitability'].iloc[-1]:.2f}")
+with col2:
+    st.metric(label="⚙️ Operational Efficiency", value=f"{df_metrics['operational_efficiency'].iloc[-1]:.2f}%")
+with col3:
+    st.metric(label="⭐ Customer Satisfaction", value=f"{df_metrics['customer_satisfaction'].iloc[-1]:.2f}%")
 
-        # MAKE: produce to match today's orders (simple build-to-order), optionally capacity-bound
-        todays_orders = orders.loc[orders["date"] == start_date.date()].copy()
-        rem_hours = (
-            {"WC-ASM": wc_caps["WC-ASM"], "WC-TEST": wc_caps["WC-TEST"]}
-            if apply_capacity else {"WC-ASM": 1e9, "WC-TEST": 1e9}
-        )
+# --- Charts ---
+st.subheader("Performance Trends Over Time")
+fig_profit = px.line(df_metrics, x='days', y='profitability', title='Profitability Trend', markers=True)
+st.plotly_chart(fig_profit, use_container_width=True)
 
-        for _, so in todays_orders.iterrows():
-            fg = so["item_id"]
-            qty = int(so["order_qty"])
+fig_efficiency = px.line(df_metrics, x='days', y='operational_efficiency', title='Operational Efficiency Trend', markers=True)
+st.plotly_chart(fig_efficiency, use_container_width=True)
 
-            # Max producible due to RM
-            bom_rows = boms.loc[boms["parent_item_id"] == fg]
-            can_make = qty
-            for _, b in bom_rows.iterrows():
-                on_hand = inv.get((b["component_item_id"],"MAIN"), 0)
-                can_make = min(can_make, int(on_hand // b["qty_per"]))
-
-            # Capacity constraint
-            if apply_capacity:
-                rt_fg = routings[routings["item_id"] == fg]
-                total_std = rt_fg["std_hours_per_unit"].sum()
-                prod_qty_cap = can_make
-                for _, r in rt_fg.iterrows():
-                    wc = r["wc_id"]
-                    cap_units = int(rem_hours[wc] / (r["std_hours_per_unit"] if r["std_hours_per_unit"] > 0 else 1e9))
-                    prod_qty_cap = min(prod_qty_cap, cap_units)
-                prod_qty = max(0, min(can_make, prod_qty_cap))
-                # Deduct hours
-                for _, r in rt_fg.iterrows():
-                    wc = r["wc_id"]
-                    rem_hours[wc] -= prod_qty * r["std_hours_per_unit"]
-                    rem_hours[wc] = max(0.0, rem_hours[wc])
-            else:
-                prod_qty = can_make
-
-            # Consume RM and add FG
-            for _, b in bom_rows.iterrows():
-                inv[(b["component_item_id"],"MAIN")] = inv.get((b["component_item_id"],"MAIN"), 0) - int(b["qty_per"]*prod_qty)
-            inv[(fg,"MAIN")] = inv.get((fg,"MAIN"), 0) + prod_qty
-
-        # DELIVER: ship open orders by due date
-        open_orders = orders[(orders["shipped_qty"] < orders["order_qty"]) & (orders["due_date"] >= start_date)].copy()
-        for idx, so in open_orders.iterrows():
-            fg = so["item_id"]
-            need = int(so["order_qty"] - so["shipped_qty"])
-            available = inv.get((fg,"MAIN"), 0)
-            ship = min(need, available)
-            if ship > 0:
-                inv[(fg,"MAIN")] = available - ship
-                orders.at[idx, "shipped_qty"] += ship
-                orders.at[idx, "ship_date"] = start_date
-                revenue += ship * sales_price.get(fg, 100.0)
-                # COGS from RM
-                bom_rows = boms.loc[boms["parent_item_id"] == fg]
-                unit_cogs = sum(unit_cost_rm.get(r["component_item_id"], 0) * r["qty_per"] for _, r in bom_rows.iterrows())
-                cogs += ship * unit_cogs
-
-        # Simple expedite trigger: if backlog ratio >= threshold, speed up future inbound (simulate ocean→air)
-        backlog_orders = orders[(orders["shipped_qty"] < orders["order_qty"]) & (orders["due_date"] >= start_date)]
-        backlog_ratio = 0.0
-        if len(backlog_orders) > 0:
-            demand_left = (backlog_orders["order_qty"] - backlog_orders["shipped_qty"]).sum()
-            fg_on_hand = sum(inv.get((k,"MAIN"), 0) for k in ["FG-100","FG-200"])
-            backlog_ratio = max(0.0, (demand_left - fg_on_hand) / max(1, demand_left))
-        if expedite_threshold > 0 and backlog_ratio >= expedite_threshold:
-            new_inbound = []
-            for (itm, q, arr) in inbound:
-                days_left = (arr - start_date).days
-                if days_left > 8:
-                    new_arr = arr - pd.Timedelta(days=22)  # pull forward as if switching to air
-                    new_inbound.append((itm, q, new_arr))
-                    logistics_cost += 0.20 * q  # placeholder extra cost for air
-                else:
-                    new_inbound.append((itm, q, arr))
-            inbound = new_inbound
-
-        # KPIs snapshot
-        day_orders = orders[orders["date"] == start_date.date()]
-        if len(day_orders) > 0:
-            otif = (
-                day_orders.apply(
-                    lambda r: 1 if (pd.notna(r["ship_date"]) and r["ship_date"] <= r["due_date"] and r["shipped_qty"] >= r["order_qty"])
-                    else 0,
-                    axis=1
-                ).sum()
-            ) / len(day_orders)
-        else:
-            otif = np.nan
-
-        total_units = sum(v for k, v in inv.items() if k[0].startswith(("RM","FG")))
-        kpi_records.append({
-            "date": start_date.date(),
-            "OTIF": otif,
-            "InventoryUnits": total_units,
-            "Revenue": revenue,
-            "COGS": cogs,
-            "BacklogRatio": backlog_ratio
-        })
-
-        start_date += pd.Timedelta(days=1)
-
-    kpis = pd.DataFrame(kpi_records)
-    return kpis, orders
-
-# ---------- Sidebar Controls ----------
-st.sidebar.title("SCOR Scenario Controls")
-default_path = os.path.join(os.path.dirname(__file__), "SCOR_Sim_v1")
-base_path = st.sidebar.text_input("Dataset path", value=default_path)
-days = st.sidebar.slider("Horizon (days)", min_value=30, max_value=180, value=90, step=10)
-demand_surge = st.sidebar.slider("Demand surge (%)", min_value=-50, max_value=200, value=0, step=5)
-supplier_delay = st.sidebar.slider("Supplier delay (+days)", min_value=0, max_value=30, value=0, step=1)
-expedite_thr = st.sidebar.slider("Expedite if backlog ≥", min_value=0.0, max_value=1.0, value=0.2, step=0.05)
-apply_capacity = st.sidebar.checkbox("Apply capacity limits", value=False)
-asm_cap = st.sidebar.number_input("ASM daily capacity (hrs)", value=800, step=50)
-test_cap = st.sidebar.number_input("TEST daily capacity (hrs)", value=700, step=50)
-ss_mult = st.sidebar.slider("Safety stock multiplier", min_value=0.5, max_value=2.0, value=1.0, step=0.1)
-seed = st.sidebar.number_input("Random seed", value=42, step=1)
-
-missing = ensure_paths(base_path)
-if missing:
-    st.error(f"Missing dataset files in {base_path}: {missing}")
-    st.stop()
-
-# ---------- Run Simulation ----------
-run_button = st.sidebar.button("Run Simulation")
-if run_button:
-    start = time.time()
-    with st.spinner("Running SCOR simulation..."):
-        kpis, orders = run_sim(
-            base_path,
-            horizon_days=days,
-            demand_surge_pct=demand_surge,
-            supplier_delay_days=supplier_delay,
-            expedite_threshold=expedite_thr,
-            apply_capacity=apply_capacity,
-            asm_capacity=asm_cap,
-            test_capacity=test_cap,
-            ss_multiplier=ss_mult,
-            random_seed=int(seed)
-        )
-    end = time.time()
-    st.success(f"Simulation complete in {end-start:.2f}s")
-
-    # KPI Cards
-    col1, col2, col3, col4 = st.columns(4)
-    latest = kpis.dropna().iloc[-1] if len(kpis.dropna()) > 0 else None
-    with col1:
-        st.metric("OTIF (latest day)", f"{(latest['OTIF']*100):.1f}%" if latest is not None else "n/a")
-    with col2:
-        st.metric("Inventory Units", f"{int(kpis['InventoryUnits'].iloc[-1])}")
-    with col3:
-        st.metric("Revenue (cumulative)", f"${kpis['Revenue'].iloc[-1]:,.0f}")
-    with col4:
-        st.metric("COGS (cumulative)", f"${kpis['COGS'].iloc[-1]:,.0f}")
-
-    # Charts (matplotlib, one per chart, no styles/colors)
-    fig1, ax1 = plt.subplots()
-    ax1.plot(kpis["date"], kpis["OTIF"])
-    ax1.set_title("Daily OTIF")
-    ax1.set_xlabel("Date"); ax1.set_ylabel("OTIF")
-    st.pyplot(fig1)
-
-    fig2, ax2 = plt.subplots()
-    ax2.plot(kpis["date"], kpis["InventoryUnits"])
-    ax2.set_title("Inventory Units Over Time")
-    ax2.set_xlabel("Date"); ax2.set_ylabel("Units")
-    st.pyplot(fig2)
-
-    fig3, ax3 = plt.subplots()
-    ax3.plot(kpis["date"], kpis["Revenue"], label="Revenue")
-    ax3.plot(kpis["date"], kpis["COGS"], label="COGS")
-    ax3.set_title("Revenue vs COGS (Cumulative)")
-    ax3.set_xlabel("Date"); ax3.set_ylabel("USD")
-    ax3.legend()
-    st.pyplot(fig3)
-
-    st.subheader("Orders (sample)")
-    st.dataframe(orders.head(50))
-
-    tab1, tab2 = st.tabs(["Download KPIs", "Download Orders"])
-    with tab1:
-        csv1 = kpis.to_csv(index=False).encode("utf-8")
-        st.download_button("Download KPI Results (CSV)", data=csv1, file_name="kpi_results.csv", mime="text/csv")
-    with tab2:
-        csv2 = orders.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Orders with Shipments (CSV)", data=csv2, file_name="orders_with_shipments.csv", mime="text/csv")
-else:
-    st.info("Set your scenario on the left and click **Run Simulation**.")
-    st.code(f"Dataset path: {default_path}", language="bash")
+fig_satisfaction = px.line(df_metrics, x='days', y='customer_satisfaction', title='Customer Satisfaction Trend', markers=True)
+st.plotly_chart(fig_satisfaction, use_container_width=True)
 
 st.markdown("---")
-st.markdown("**SCOR mapping** → PLAN (forecast, policies) • SOURCE (suppliers, lanes) • MAKE (BOM, routing, capacity)
+# --- Central Log ---
+st.subheader("Decision Log")
+if st.session_state.simulation_log:
+    log_df = pd.DataFrame(st.session_state.simulation_log)
+    st.dataframe(log_df.set_index('timestamp'), use_container_width=True, height=250)
+else:
+    st.info("Click a button above to start the simulation!")
