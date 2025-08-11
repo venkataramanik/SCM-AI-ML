@@ -27,17 +27,17 @@ if 'day' not in st.session_state:
 
 # --- Constants ---
 # KPI decay/growth rates without agent intervention
-ON_TIME_DECAY_RATE = -0.2
-COST_GROWTH_RATE = 10
-INVENTORY_DECAY_RATE = -0.5
-RISK_GROWTH_RATE = 0.5
+ON_TIME_DECAY_RATE = -0.5
+COST_GROWTH_RATE = 20
+INVENTORY_DECAY_RATE = 1.0
+RISK_GROWTH_RATE = 1.0
 
 # Agentic framework's impact on KPIs
+# Values are now ranges to provide more dynamic behavior
 AGENT_IMPACTS = {
-    'demand_forecast': {'on_time': 2, 'cost': -15, 'inventory': -2},
-    'procurement': {'on_time': 5, 'cost': -20, 'risk': -5},
-    'logistics': {'on_time': 5, 'cost': -10, 'inventory': -1},
-    'customer_service': {'on_time': 1, 'satisfaction': 5},
+    'demand_forecast': {'on_time': (1.0, 3.0), 'cost': (-20.0, -10.0), 'inventory': (-3.0, -1.0)},
+    'procurement': {'on_time': (4.0, 6.0), 'cost': (-25.0, -15.0), 'risk': (-6.0, -4.0)},
+    'logistics': {'on_time': (4.0, 6.0), 'cost': (-15.0, -5.0), 'inventory': (-2.0, 0.0)},
 }
 
 # Market Events (simulating real-world disruptions)
@@ -78,24 +78,25 @@ def advance_day(on_time_change, cost_change, inventory_change, risk_change, even
             # Agents react to events, mitigating impact
             agent_reaction = ""
             if event_name == 'Supplier Delay':
+                # Higher risk score means lower chance of agent successfully mitigating
                 if random.random() > st.session_state.kpis['risk_exposure_score'][-1] / 100.0:
-                    current_on_time += AGENT_IMPACTS['procurement']['on_time'] * 0.7 # Procurement Agent finds a partial solution
-                    current_cost += AGENT_IMPACTS['procurement']['cost'] * 0.5
+                    current_on_time += AGENT_IMPACTS['procurement']['on_time'][1] * 0.7 # Procurement Agent finds a partial solution
+                    current_cost += AGENT_IMPACTS['procurement']['cost'][0] * 0.5
                     agent_reaction = "Procurement Agent initiated alternative sourcing."
                 else:
                     agent_reaction = "Procurement Agent failed to find a quick alternative."
 
             if event_name == 'Unexpected Demand Spike':
                 if random.random() < 0.8: # High chance of success for forecasting agent
-                    current_inventory += AGENT_IMPACTS['demand_forecast']['inventory'] * 0.8
-                    current_cost += AGENT_IMPACTS['demand_forecast']['cost'] * 0.5
-                    current_on_time += AGENT_IMPACTS['demand_forecast']['on_time'] * 0.5
+                    current_inventory += AGENT_IMPACTS['demand_forecast']['inventory'][0] * 0.8
+                    current_cost += AGENT_IMPACTS['demand_forecast']['cost'][0] * 0.5
+                    current_on_time += AGENT_IMPACTS['demand_forecast']['on_time'][1] * 0.5
                     agent_reaction = "Demand Forecasting Agent adjusted plans."
             
             if event_name == 'Logistics Network Congestion':
                  if random.random() < 0.7:
-                     current_on_time += AGENT_IMPACTS['logistics']['on_time'] * 0.7
-                     current_cost += AGENT_IMPACTS['logistics']['cost'] * 0.5
+                     current_on_time += AGENT_IMPACTS['logistics']['on_time'][1] * 0.7
+                     current_cost += AGENT_IMPACTS['logistics']['cost'][0] * 0.5
                      agent_reaction = "Logistics Agent rerouted shipments."
             
             current_on_time += event_impact.get('on_time', 0)
@@ -121,17 +122,17 @@ def run_simulation_day():
     risk_change = RISK_GROWTH_RATE
     
     # If the system is "Agentic", agents actively work to improve KPIs
-    on_time_change += AGENT_IMPACTS['procurement']['on_time']
-    cost_change += AGENT_IMPACTS['procurement']['cost']
-    risk_change += AGENT_IMPACTS['procurement']['risk']
+    on_time_change += random.uniform(*AGENT_IMPACTS['procurement']['on_time'])
+    cost_change += random.uniform(*AGENT_IMPACTS['procurement']['cost'])
+    risk_change += random.uniform(*AGENT_IMPACTS['procurement']['risk'])
 
-    on_time_change += AGENT_IMPACTS['logistics']['on_time']
-    cost_change += AGENT_IMPACTS['logistics']['cost']
-    inventory_change += AGENT_IMPACTS['logistics']['inventory']
+    on_time_change += random.uniform(*AGENT_IMPACTS['logistics']['on_time'])
+    cost_change += random.uniform(*AGENT_IMPACTS['logistics']['cost'])
+    inventory_change += random.uniform(*AGENT_IMPACTS['logistics']['inventory'])
 
-    on_time_change += AGENT_IMPACTS['demand_forecast']['on_time']
-    cost_change += AGENT_IMPACTS['demand_forecast']['cost']
-    inventory_change += AGENT_IMPACTS['demand_forecast']['inventory']
+    on_time_change += random.uniform(*AGENT_IMPACTS['demand_forecast']['on_time'])
+    cost_change += random.uniform(*AGENT_IMPACTS['demand_forecast']['cost'])
+    inventory_change += random.uniform(*AGENT_IMPACTS['demand_forecast']['inventory'])
 
     advance_day(on_time_change, cost_change, inventory_change, risk_change, "Agentic framework is active.")
     add_log("System", "Agents are working autonomously to optimize the supply chain.", 'success')
