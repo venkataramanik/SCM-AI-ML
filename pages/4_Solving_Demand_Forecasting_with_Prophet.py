@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from prophet import Prophet
 from prophet.plot import plot_plotly, plot_components_plotly
+import plotly.graph_objects as go  # <-- This is the new, corrected line
 from datetime import date, timedelta
 
 st.set_page_config(
