@@ -33,30 +33,41 @@ if 'agent_states' not in st.session_state:
     st.session_state.agent_states = {
         'demand_forecast': {'current_forecast': 100},
         'procurement': {'pending_orders': []},
-        'logistics': {'shipments': []}
+        'logistics': {'shipments': []},
+        'learning': { # New state to track agent 'learning'
+            'Supplier Delay': 0,
+            'Labor Strike': 0,
+            'Logistics Network Congestion': 0,
+            'Port Closure': 0,
+        }
     }
+if 'human_intervention_needed' not in st.session_state:
+    st.session_state.human_intervention_needed = False
 
 
 # --- Constants ---
 # KPI decay/growth rates without agent intervention
-ON_TIME_DECAY_RATE = -0.2 # Adjusted to be more gradual
-COST_GROWTH_RATE = 15 # Adjusted
-INVENTORY_GROWTH_RATE = 0.5 # Adjusted
-RISK_GROWTH_RATE = 0.5 # Adjusted
+ON_TIME_DECAY_RATE = -0.2
+COST_GROWTH_RATE = 15
+INVENTORY_GROWTH_RATE = 0.5
+RISK_GROWTH_RATE = 0.5
 
-# Agentic framework's impact on KPIs (now more dynamic and message-driven)
-AGENT_IMPACTS = {
-    'demand_forecast': {'on_time': (2.0, 4.0), 'cost': (-25.0, -15.0), 'inventory': (-4.0, -2.0)},
-    'procurement': {'on_time': (5.0, 8.0), 'cost': (-30.0, -20.0), 'risk': (-8.0, -5.0)},
-    'logistics': {'on_time': (5.0, 8.0), 'cost': (-20.0, -10.0), 'inventory': (-3.0, 0.0)},
+# Base agentic framework's impact on KPIs
+BASE_AGENT_IMPACTS = {
+    'demand_forecast': {'on_time': (2.0, 5.0), 'cost': (-30.0, -20.0), 'inventory': (-5.0, -3.0)},
+    'procurement': {'on_time': (6.0, 10.0), 'cost': (-40.0, -25.0), 'risk': (-10.0, -7.0)},
+    'logistics': {'on_time': (6.0, 10.0), 'cost': (-25.0, -15.0), 'inventory': (-5.0, -2.0)},
 }
 
 # Market Events (simulating real-world disruptions)
 MARKET_EVENTS = [
-    {'name': 'Supplier Delay', 'impact': {'on_time': -10, 'cost': 80, 'risk': 4}, 'chance': 0.1, 'trigger': 'procurement'}, # Impact reduced, chance reduced
-    {'name': 'Unexpected Demand Spike', 'impact': {'on_time': -8, 'cost': 40, 'inventory': 5}, 'chance': 0.1, 'trigger': 'demand_forecast'}, # Impact reduced
-    {'name': 'Logistics Network Congestion', 'impact': {'on_time': -10, 'cost': 25}, 'chance': 0.15, 'trigger': 'logistics'}, # Impact reduced
-    {'name': 'Geopolitical Event', 'impact': {'on_time': -15, 'cost': 120, 'risk': 15}, 'chance': 0.03, 'trigger': 'procurement'}, # Impact reduced, chance reduced
+    {'name': 'Supplier Delay', 'impact': {'on_time': -10, 'cost': 80, 'risk': 4}, 'chance': 0.1, 'trigger': 'procurement'},
+    {'name': 'Unexpected Demand Spike', 'impact': {'on_time': -8, 'cost': 40, 'inventory': 5}, 'chance': 0.1, 'trigger': 'demand_forecast'},
+    {'name': 'Logistics Network Congestion', 'impact': {'on_time': -10, 'cost': 25}, 'chance': 0.15, 'trigger': 'logistics'},
+    {'name': 'Labor Strike', 'impact': {'on_time': -20, 'cost': 150, 'risk': 10}, 'chance': 0.05, 'trigger': 'procurement'},
+    {'name': 'Port Closure', 'impact': {'on_time': -25, 'cost': 200, 'risk': 12}, 'chance': 0.03, 'trigger': 'logistics'},
+    # The 'black swan' event that requires human intervention
+    {'name': 'Global Supply Chain Freeze', 'impact': {'on_time': -50, 'cost': 500, 'risk': 30}, 'chance': 0.01, 'trigger': 'human_intervention'},
 ]
 
 # --- Helper Functions ---
@@ -72,6 +83,9 @@ def add_log(agent, message, level='info'):
 
 def advance_day():
     """Advances the simulation by one day with new KPI values."""
+    if st.session_state.human_intervention_needed:
+        return # Halt simulation if human intervention is needed
+        
     st.session_state.day += 1
 
     # Apply natural decay/growth
@@ -81,7 +95,6 @@ def advance_day():
     risk_change = RISK_GROWTH_RATE
     
     # Process market events and their impacts
-    event_message = ""
     for event in MARKET_EVENTS:
         if random.random() < event['chance']:
             event_name = event['name']
@@ -90,7 +103,7 @@ def advance_day():
             event_message = f"| **Market Event:** {event_name} occurred! "
             add_log("System", event_message, 'warning')
             
-            # Send a message to the relevant agent
+            # Send a message to the relevant agent or human intervention channel
             st.session_state.message_bus[event['trigger']] = {'type': 'event', 'data': event_name, 'impact': event_impact}
 
             on_time_change += event_impact.get('on_time', 0)
@@ -126,6 +139,14 @@ def run_agents():
     """Orchestrates agent interactions for the current day."""
     impacts = {}
     
+    # Check for human intervention message first
+    if 'human_intervention' in st.session_state.message_bus:
+        message = st.session_state.message_bus.pop('human_intervention')
+        add_log("System", f"Agents unable to handle event: '{message['data']}'. Requiring human takeover.", 'critical')
+        st.session_state.human_intervention_needed = True
+        st.session_state.simulation_running = False
+        return {}
+    
     # Agent 1: Demand Forecasting Agent
     forecast_impacts = run_demand_forecast_agent()
     if forecast_impacts:
@@ -146,19 +167,25 @@ def run_agents():
 
 def run_demand_forecast_agent():
     """Simulates the Demand Forecasting Agent's actions."""
+    impacts = {}
+    
+    # Proactive "business-as-usual" optimization
+    impacts['on_time'] = random.uniform(0.1, 0.5)
+    impacts['cost'] = random.uniform(-5.0, -1.0)
+    
     if 'demand_forecast' in st.session_state.message_bus:
         message = st.session_state.message_bus.pop('demand_forecast')
         if message['type'] == 'event' and message['data'] == 'Unexpected Demand Spike':
             add_log("DemandForecastAgent", "Detected unexpected demand spike. Adjusting forecast and communicating to Procurement.", 'warning')
-            st.session_state.agent_states['demand_forecast']['current_forecast'] = 150 # Adjusting forecast
+            st.session_state.agent_states['demand_forecast']['current_forecast'] = 150
             st.session_state.message_bus['procurement'] = {'type': 'forecast_update', 'data': 150}
             
             # Agents help mitigate the problem
-            return {'on_time': random.uniform(*AGENT_IMPACTS['demand_forecast']['on_time']),
-                    'cost': random.uniform(*AGENT_IMPACTS['demand_forecast']['cost']),
-                    'inventory': random.uniform(*AGENT_IMPACTS['demand_forecast']['inventory'])}
+            impacts['on_time'] += random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['on_time'])
+            impacts['cost'] += random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['cost'])
+            impacts['inventory'] = random.uniform(*BASE_AGENT_IMPACTS['demand_forecast']['inventory'])
     
-    add_log("DemandForecastAgent", "Forecasting as usual. No market events to react to.")
+    add_log("DemandForecastAgent", "Proactively forecasting and optimizing inventory levels.")
     
     # Every few days, provide a new forecast
     if st.session_state.day % 5 == 0:
@@ -167,36 +194,45 @@ def run_demand_forecast_agent():
         st.session_state.message_bus['procurement'] = {'type': 'forecast_update', 'data': new_forecast}
         add_log("DemandForecastAgent", f"Published new forecast: {new_forecast} units.")
     
-    return {}
+    return impacts
 
 def run_procurement_agent():
     """Simulates the Procurement Agent's actions."""
     impacts = {}
     
+    # Proactive "business-as-usual" optimization
+    impacts['on_time'] = random.uniform(0.1, 0.5)
+    impacts['cost'] = random.uniform(-5.0, -1.0)
+    
     # Check for incoming messages
     if 'procurement' in st.session_state.message_bus:
         message = st.session_state.message_bus.pop('procurement')
-        if message['type'] == 'event' and message['data'] == 'Supplier Delay':
-            add_log("ProcurementAgent", "Received alert: Supplier Delay. Searching for alternative suppliers.", 'warning')
+        event_name = message['data']
+
+        if event_name in ['Supplier Delay', 'Labor Strike']:
+            add_log("ProcurementAgent", f"Received alert: {event_name}. Searching for alternative suppliers and pre-ordering materials.", 'warning')
             
             # Higher risk score means lower chance of success
             if random.random() > st.session_state.kpis['risk_exposure_score'][-1] / 100.0:
-                add_log("ProcurementAgent", "Successfully found an alternative supplier and placed an emergency order.", 'success')
-                impacts = {'on_time': random.uniform(*AGENT_IMPACTS['procurement']['on_time']),
-                           'cost': random.uniform(*AGENT_IMPACTS['procurement']['cost']),
-                           'risk': random.uniform(*AGENT_IMPACTS['procurement']['risk'])}
+                # Apply learning bonus to agent's impact
+                learning_bonus = st.session_state.agent_states['learning'][event_name] * 0.5
+                add_log("ProcurementAgent", f"Successfully found an alternative supplier. Learning improved for '{event_name}'.", 'success')
+                st.session_state.agent_states['learning'][event_name] += 1
+                
+                impacts['on_time'] += random.uniform(BASE_AGENT_IMPACTS['procurement']['on_time'][0] + learning_bonus, BASE_AGENT_IMPACTS['procurement']['on_time'][1] + learning_bonus)
+                impacts['cost'] += random.uniform(BASE_AGENT_IMPACTS['procurement']['cost'][0], BASE_AGENT_IMPACTS['procurement']['cost'][1])
+                impacts['risk'] = random.uniform(BASE_AGENT_IMPACTS['procurement']['risk'][0], BASE_AGENT_IMPACTS['procurement']['risk'][1])
             else:
-                add_log("ProcurementAgent", "Failed to find a quick alternative. Shipment will be delayed.", 'error')
+                add_log("ProcurementAgent", f"Failed to find a quick alternative. Shipment will be delayed.", 'error')
 
         elif message['type'] == 'forecast_update':
             new_forecast = message['data']
             add_log("ProcurementAgent", f"Received new forecast of {new_forecast}. Adjusting order quantities.")
             # Adjust inventory and cost based on new orders
-            impacts = {'cost': random.uniform(-5.0, -2.0), 'inventory': random.uniform(-1.0, 1.0)}
+            impacts['cost'] += random.uniform(-5.0, -2.0)
+            impacts['inventory'] = random.uniform(-1.0, 1.0)
     
-    # Normal day-to-day operations
-    if not impacts:
-        add_log("ProcurementAgent", "Executing daily purchasing based on current forecast.")
+    add_log("ProcurementAgent", "Executing daily purchasing and proactively monitoring suppliers.")
     
     return impacts
 
@@ -204,30 +240,48 @@ def run_logistics_agent():
     """Simulates the Logistics Agent's actions."""
     impacts = {}
     
+    # Proactive "business-as-usual" optimization
+    impacts['on_time'] = random.uniform(0.1, 0.5)
+    impacts['cost'] = random.uniform(-5.0, -1.0)
+    
     # Check for incoming messages
     if 'logistics' in st.session_state.message_bus:
         message = st.session_state.message_bus.pop('logistics')
-        if message['type'] == 'event' and message['data'] == 'Logistics Network Congestion':
-            add_log("LogisticsAgent", "Detected network congestion. Rerouting shipments.", 'warning')
+        event_name = message['data']
+        
+        if event_name in ['Logistics Network Congestion', 'Port Closure']:
+            add_log("LogisticsAgent", f"Detected {event_name}. Rerouting shipments and seeking alternative transport.", 'warning')
             
             # Chance of successful reroute
             if random.random() < 0.7:
-                add_log("LogisticsAgent", "Rerouting successful. Mitigating on-time delivery impact.", 'success')
-                impacts = {'on_time': random.uniform(*AGENT_IMPACTS['logistics']['on_time']),
-                           'cost': random.uniform(*AGENT_IMPACTS['logistics']['cost'])}
+                # Apply learning bonus to agent's impact
+                learning_bonus = st.session_state.agent_states['learning'][event_name] * 0.5
+                add_log("LogisticsAgent", f"Rerouting successful. Learning improved for '{event_name}'.", 'success')
+                st.session_state.agent_states['learning'][event_name] += 1
+
+                impacts['on_time'] += random.uniform(BASE_AGENT_IMPACTS['logistics']['on_time'][0] + learning_bonus, BASE_AGENT_IMPACTS['logistics']['on_time'][1] + learning_bonus)
+                impacts['cost'] += random.uniform(BASE_AGENT_IMPACTS['logistics']['cost'][0], BASE_AGENT_IMPACTS['logistics']['cost'][1])
             else:
-                add_log("LogisticsAgent", "Failed to find an efficient alternative route. Delays expected.", 'error')
+                add_log("LogisticsAgent", f"Failed to find an efficient alternative route. Delays expected.", 'error')
     
-    if not impacts:
-        add_log("LogisticsAgent", "Optimizing daily delivery routes.")
+    add_log("LogisticsAgent", "Optimizing daily delivery routes to improve efficiency.")
     
     return impacts
 
 def start_simulation():
-    st.session_state.simulation_running = True
+    if not st.session_state.human_intervention_needed:
+        st.session_state.simulation_running = True
 
 def stop_simulation():
     st.session_state.simulation_running = False
+
+def human_intervene():
+    """Action for human intervention button. Applies a large fix and resets the state."""
+    st.session_state.kpis['on_time_delivery_rate'][-1] += 30 # Big manual fix
+    st.session_state.kpis['supply_chain_cost'][-1] -= 200 # Big manual fix
+    st.session_state.human_intervention_needed = False
+    st.session_state.simulation_running = False
+    add_log("Human", "Intervened to solve the black swan event. The supply chain is recovering.", 'success')
 
 def reset_simulation():
     """Resets all simulation state to its initial values."""
@@ -242,6 +296,9 @@ st.markdown("This simulation models an **Agentic Framework** with autonomous, in
 st.sidebar.header("Control Panel")
 if st.session_state.simulation_running:
     st.sidebar.button("⏹️ Stop Simulation", on_click=stop_simulation)
+elif st.session_state.human_intervention_needed:
+    st.sidebar.warning("🚨 A major crisis requires human intervention!")
+    st.sidebar.button("👨‍💼 Human Intervention: Resolve Crisis", on_click=human_intervene)
 else:
     st.sidebar.button("▶️ Start Simulation", on_click=start_simulation)
 st.sidebar.button("🔄 Reset Simulation", on_click=reset_simulation)
@@ -251,6 +308,7 @@ st.sidebar.markdown("""
 - **Demand Forecast Agent:** Predicts demand to optimize inventory.
 - **Procurement Agent:** Manages sourcing, orders, and supplier risk.
 - **Logistics Agent:** Optimizes shipping and delivery routes.
+- **Human:** Steps in for unprecedented, "black swan" events.
 """)
 
 st.header("Simulation Dashboard")
