@@ -1,64 +1,183 @@
+# A professional Streamlit application that demonstrates a multi-step AI Procurement Agent.
+# This app simulates the end-to-end procurement process, from RFQ generation to final recommendation.
+# It is designed to showcase the potential of agentic AI in a business context.
+
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import time
 
-st.set_page_config(layout="wide")
-st.title("The Bullwhip Effect Simulator 📊")
-st.markdown("This app shows how small changes in consumer demand get dramatically amplified as orders move up the supply chain. Adjust the sliders on the left to see the effect!")
+# --- 1. CONFIGURATION AND DATA SIMULATION ---
+# This section sets up the core parameters and generates synthetic data.
 
-st.sidebar.header("Simulation Parameters")
-weeks = st.sidebar.slider("Number of Weeks", 10, 50, 20)
-retailer_buffer = st.sidebar.slider("Retailer's 'Fear Factor' (Safety Buffer)", 0.0, 0.5, 0.1, 0.05)
-wholesaler_buffer = st.sidebar.slider("Wholesaler's 'Fear Factor'", 0.0, 1.0, 0.25, 0.05)
-manufacturer_buffer = st.sidebar.slider("Manufacturer's 'Fear Factor'", 0.0, 1.5, 0.5, 0.05)
+st.set_page_config(layout="wide", page_title="AI Procurement Agent", page_icon="🤖")
 
-if st.sidebar.button("Run Simulation"):
-    
-    data = {
-        'Week': list(range(1, weeks + 1)),
-        'Consumer Demand': np.random.randint(8, 12, weeks),
-        'Retailer Orders': [0.0] * weeks,
-        'Wholesaler Orders': [0.0] * weeks,
-        'Manufacturer Orders': [0.0] * weeks,
-    }
+# Define key procurement entities and their characteristics.
+procurement_config = {
+    'product_to_procure': 'Custom High-Performance Computing Chip',
+    'quantity': 5000,
+    'timeline_days': 90,
+    'suppliers': [
+        {'name': 'Innovate Solutions Inc.', 'risk_score': 0.8, 'base_price_per_unit': 120.00, 'lead_time_days': 85},
+        {'name': 'Global Tech Partners', 'risk_score': 0.6, 'base_price_per_unit': 115.50, 'lead_time_days': 100},
+        {'name': 'Apex Components LLC', 'risk_score': 0.9, 'base_price_per_unit': 125.00, 'lead_time_days': 75}
+    ]
+}
 
-    df = pd.DataFrame(data)
+# --- 2. AGENTIC AI SIMULATION LOGIC ---
+# This section contains the functions for the multi-step agent workflow.
 
-    for i in range(weeks):
-        # Retailer orders based on demand + a buffer
-        df.loc[i, 'Retailer Orders'] = df.loc[i, 'Consumer Demand'] * (1 + retailer_buffer)
-        
-        # Wholesaler's logic is based on the previous week's retailer order
-        if i > 0:
-            df.loc[i, 'Wholesaler Orders'] = df.loc[i-1, 'Retailer Orders'] * (1 + wholesaler_buffer)
-        else:
-            df.loc[i, 'Wholesaler Orders'] = df.loc[i, 'Retailer Orders'] * (1 + wholesaler_buffer)
+def generate_rfq(product_name, quantity, timeline):
+    """
+    Simulates an AI model generating a Request for Quote (RFQ).
+    In a real application, this would be a call to a generative LLM API.
+    """
+    with st.spinner("Step 1: AI Agent is generating the RFQ..."):
+        time.sleep(2) # Simulate API call delay
+        rfq_content = f"""
+# Request for Quote (RFQ) for {product_name}
 
-        # Manufacturer's logic is based on the previous week's wholesaler order
-        if i > 0:
-            df.loc[i, 'Manufacturer Orders'] = df.loc[i-1, 'Wholesaler Orders'] * (1 + manufacturer_buffer)
-        else:
-             df.loc[i, 'Manufacturer Orders'] = df.loc[i, 'Wholesaler Orders'] * (1 + manufacturer_buffer)
+**Date:** {pd.to_datetime('today').date()}
+**Project:** Autonomous Procurement Pilot
+**Procurement Objective:** Secure a high-performance computing chip that meets the following specifications.
 
-    st.subheader("Order Volume Across Supply Chain Tiers")
-    st.markdown("Notice how the small variations in **Consumer Demand** become huge swings in the **Manufacturer's Orders**!")
-    
-    fig = px.line(df, x='Week', y=['Consumer Demand', 'Retailer Orders', 'Wholesaler Orders', 'Manufacturer Orders'],
-                  title='Order Amplification',
-                  labels={'value': 'Order Quantity', 'variable': 'Supply Chain Tier'},
-                  color_discrete_map={
-                      "Consumer Demand": "black",
-                      "Retailer Orders": "blue",
-                      "Wholesaler Orders": "green",
-                      "Manufacturer Orders": "red"
-                  })
-    
-    fig.update_layout(height=500, width=1000)
-    st.plotly_chart(fig, use_container_width=True)
+**Specifications:**
+- **Product Name:** {product_name}
+- **Quantity:** {quantity} units
+- **Required Delivery Date:** Within {timeline} days
+- **Technical Requirements:** (detailed technical specifications would go here, e.g., CPU cores, clock speed, power consumption)
+- **Quality Standards:** ISO 9001 certified
 
-    st.sidebar.markdown("""
+**Instructions for Suppliers:**
+Please provide a detailed quotation including price per unit, total cost, lead time, and any additional relevant information.
 ---
-**The 'Why' behind the whip:**
-The bullwhip effect happens because each company in the chain makes its own decisions based on a limited view of the market. They often add a safety buffer to their orders just in case, and this small extra amount gets amplified at every single step, causing massive inefficiency for the manufacturer.
-""")
+This is a simulated document generated by an AI Agent.
+"""
+    st.success("Step 1 Complete: RFQ document generated.")
+    return rfq_content
+
+def search_and_vet_suppliers(rfq_content):
+    """
+    Simulates an AI agent searching for and vetting suppliers based on the RFQ.
+    In a real app, this would involve web scraping, API calls to supplier databases, etc.
+    """
+    with st.spinner("Step 2: AI Agent is searching for and vetting suppliers..."):
+        time.sleep(3) # Simulate the search process
+        
+        # In a real scenario, this data would be dynamically fetched and a risk score would be calculated by another AI model.
+        supplier_data = procurement_config['suppliers']
+        df_suppliers = pd.DataFrame(supplier_data)
+        
+    st.success("Step 2 Complete: Suppliers identified and vetted.")
+    return df_suppliers
+
+def simulate_negotiation(df_suppliers):
+    """
+    Simulates a negotiation process where the AI agent attempts to optimize the bid.
+    This is a simple logic-based simulation.
+    """
+    with st.spinner("Step 3: AI Agent is negotiating with suppliers..."):
+        time.sleep(2)
+        
+        df_negotiated = df_suppliers.copy()
+        
+        # Simple negotiation logic: If the price is > $120, agent negotiates a 5% discount.
+        df_negotiated['negotiated_price_per_unit'] = np.where(
+            df_negotiated['base_price_per_unit'] > 120,
+            df_negotiated['base_price_per_unit'] * 0.95,
+            df_negotiated['base_price_per_unit']
+        )
+        
+    st.success("Step 3 Complete: Negotiation simulated.")
+    return df_negotiated
+
+def provide_recommendation(df_negotiated, required_timeline):
+    """
+    The final step: the AI agent analyzes all data and provides a clear recommendation.
+    This recommendation is based on a scoring system that prioritizes risk, cost, and lead time.
+    """
+    with st.spinner("Step 4: AI Agent is analyzing bids and generating a final recommendation..."):
+        time.sleep(2)
+        
+        df_analysis = df_negotiated.copy()
+        df_analysis['total_cost'] = df_analysis['negotiated_price_per_unit'] * procurement_config['quantity']
+        
+        # Scoring logic:
+        # Lower risk is better (1-risk_score)
+        # Lower cost is better (inverse of normalized cost)
+        # Faster lead time is better (inverse of normalized lead time)
+        
+        # Normalize scores to a 0-1 range
+        df_analysis['normalized_risk'] = 1 - df_analysis['risk_score']
+        df_analysis['normalized_cost'] = (df_analysis['total_cost'].max() - df_analysis['total_cost']) / (df_analysis['total_cost'].max() - df_analysis['total_cost'].min())
+        df_analysis['normalized_lead_time'] = (df_analysis['lead_time_days'].max() - df_analysis['lead_time_days']) / (df_analysis['lead_time_days'].max() - df_analysis['lead_time_days'].min())
+        
+        # Final score calculation with weights
+        # Prioritize cost and lead time, but also consider risk
+        df_analysis['final_score'] = (df_analysis['normalized_risk'] * 0.2) + \
+                                     (df_analysis['normalized_cost'] * 0.4) + \
+                                     (df_analysis['normalized_lead_time'] * 0.4)
+                                     
+        recommended_supplier = df_analysis.loc[df_analysis['final_score'].idxmax()]
+        
+        recommendation_report = f"""
+### AI Procurement Agent Final Recommendation
+
+Based on an analysis of cost, risk, and lead time, the AI Procurement Agent recommends the following supplier:
+
+**Recommended Supplier:** **{recommended_supplier['name']}**
+- **Negotiated Price:** ${recommended_supplier['negotiated_price_per_unit']:.2f} per unit
+- **Total Estimated Cost:** ${recommended_supplier['total_cost']:.2f}
+- **Lead Time:** {recommended_supplier['lead_time_days']} days
+- **Risk Score:** {recommended_supplier['risk_score']}
+
+**Reasoning:**
+The recommended supplier provides the best balance of low cost and an acceptable lead time, with a moderate risk score. The agent successfully negotiated a lower price, achieving an optimal outcome for this procurement event.
+"""
+    st.success("Step 4 Complete: Recommendation generated.")
+    return recommendation_report
+
+
+# --- 3. STREAMLIT APPLICATION LAYOUT ---
+st.title("Autonomous AI Procurement Agent")
+st.markdown("A demonstration of a multi-step AI agent for end-to-end procurement.")
+
+st.subheader("Procurement Task Setup")
+st.write(f"The agent's goal is to procure **{procurement_config['quantity']}** units of **'{procurement_config['product_to_procure']}'** within **{procurement_config['timeline_days']}** days.")
+
+if st.button("Start Agent Workflow", type="primary"):
+    # Step 1: Generate RFQ
+    rfq_document = generate_rfq(
+        procurement_config['product_to_procure'],
+        procurement_config['quantity'],
+        procurement_config['timeline_days']
+    )
+    st.markdown("---")
+    st.subheader("Generated RFQ Document")
+    st.markdown(rfq_document)
+    
+    st.markdown("---")
+    
+    # Step 2: Search and Vetting
+    df_suppliers = search_and_vet_suppliers(rfq_document)
+    st.subheader("Suppliers Identified and Vetted")
+    st.dataframe(df_suppliers)
+    
+    st.markdown("---")
+    
+    # Step 3: Negotiation
+    df_negotiated = simulate_negotiation(df_suppliers)
+    st.subheader("Negotiated Bids")
+    st.dataframe(df_negotiated)
+    
+    st.markdown("---")
+    
+    # Step 4: Recommendation
+    recommendation = provide_recommendation(
+        df_negotiated,
+        procurement_config['timeline_days']
+    )
+    st.subheader("Final Recommendation")
+    st.markdown(recommendation)
+
+st.info("This is a simplified demonstration. A real-world agent would use live APIs for LLM generation, web search, and data integration with ERP systems.")
