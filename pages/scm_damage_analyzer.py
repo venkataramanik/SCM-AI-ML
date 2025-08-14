@@ -7,7 +7,8 @@ import time
 
 # --- 1. CONFIGURATION ---
 # The NVIDIA NIM endpoint for the Llama4-Maverick multimodal model.
-API_URL = "https://ai.api.nvidia.com/v1/llama4/maverick/chat/completions"
+# NOTE: The API endpoint has been updated to the current version.
+API_URL = "https://ai.api.nvidia.com/v1/chat/completions"
 
 # --- 2. HELPER FUNCTIONS ---
 def get_damage_report(image_bytes):
@@ -39,6 +40,7 @@ def get_damage_report(image_bytes):
 
     headers = {
         "Content-Type": "application/json",
+        # NOTE: The API key is now passed as part of the Authorization header, which is standard for this endpoint.
         "Authorization": f"Bearer ", # The API key will be provided automatically.
         "Accept": "application/json"
     }
