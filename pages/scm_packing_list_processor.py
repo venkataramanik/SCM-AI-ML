@@ -10,6 +10,8 @@ import re
 # --- 1. CONFIGURATION ---
 # The URL for the NVIDIA Nemo Retriever OCR API.
 NVIDIA_API_URL = "https://ai.api.nvidia.com/v1/cv/nvidia/nemoretriever-ocr-v1"
+# The maximum allowed image size in bytes, based on common API limits.
+MAX_IMAGE_SIZE_BYTES = 180_000
 
 # --- 2. HELPER FUNCTIONS ---
 def get_ocr_text(image_bytes, api_key):
@@ -93,14 +95,11 @@ if 'image_bytes' not in st.session_state:
     st.session_state.image_bytes = None
 if 'extracted_lines' not in st.session_state:
     st.session_state.extracted_lines = None
-# The API key is now pre-filled directly in the code
 if 'api_key' not in st.session_state:
     st.session_state.api_key = "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"
 
-
 with st.sidebar:
     st.header("1. API Key")
-    # The API key is now pre-filled and displayed for confirmation
     st.info("Your NVIDIA API key is already configured.")
     st.text_input("NVIDIA API Key", value=st.session_state.api_key, type="password", disabled=True)
 
@@ -117,6 +116,8 @@ with st.sidebar:
             st.error("The API key is missing. Please ensure it is set.")
         elif not st.session_state.image_bytes:
             st.error("Please upload an image first.")
+        elif len(st.session_state.image_bytes) > MAX_IMAGE_SIZE_BYTES:
+            st.error(f"Image is too large! Please upload an image smaller than {MAX_IMAGE_SIZE_BYTES} bytes.")
         else:
             st.session_state.processed_items = None
             st.session_state.extracted_lines = None
@@ -129,12 +130,11 @@ with st.sidebar:
                 else:
                     st.error("Could not process packing list. Please try a different image.")
 
-
 # Main content area
-if st.session_state.processed_items:
+if st.session_items:
     st.header("Processed Packing List Items")
-    if st.session_state.processed_items:
-        df = pd.DataFrame(st.session_state.processed_items)
+    if st.session_items:
+        df = pd.DataFrame(st.session_items)
         st.dataframe(df, use_container_width=True)
     else:
         st.warning("No items were found in the packing list image.")
@@ -151,4 +151,4 @@ if st.session_state.extracted_lines is not None:
         if st.session_state.extracted_lines:
             st.code("\n".join(st.session_state.extracted_lines))
         else:
-            st.info("No text was extracted from the image. This indicates a problem with the image quality or content.")
+            st.info("No text was extracted from the image. This indicates a problem with the image quality, size, or content.")
