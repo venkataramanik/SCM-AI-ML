@@ -16,7 +16,6 @@ def get_ocr_text(image_bytes, api_key):
     """
     Sends an image to the NVIDIA OCR API to extract text using a user-provided API key.
     """
-    # The user's code uses a size assertion. We'll handle potential API errors for large images.
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
     
     headers = {
@@ -92,6 +91,8 @@ if 'processed_items' not in st.session_state:
     st.session_state.processed_items = None
 if 'image_bytes' not in st.session_state:
     st.session_state.image_bytes = None
+if 'extracted_lines' not in st.session_state:
+    st.session_state.extracted_lines = None
 # The API key is now pre-filled directly in the code
 if 'api_key' not in st.session_state:
     st.session_state.api_key = "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"
@@ -118,8 +119,10 @@ with st.sidebar:
             st.error("Please upload an image first.")
         else:
             st.session_state.processed_items = None
+            st.session_state.extracted_lines = None
             with st.spinner("Extracting text and parsing data..."):
                 extracted_lines = get_ocr_text(st.session_state.image_bytes, st.session_state.api_key)
+                st.session_state.extracted_lines = extracted_lines
                 if extracted_lines:
                     st.session_state.processed_items = parse_packing_list(extracted_lines)
                     st.success("Packing list processed!")
@@ -140,3 +143,12 @@ elif st.session_state.image_bytes:
     st.info("Click the 'Process Packing List' button in the sidebar to extract the data.")
 else:
     st.info("Upload an image of a packing list to see the processed data here.")
+
+# Debugging section to show raw text
+if st.session_state.extracted_lines is not None:
+    st.markdown("---")
+    with st.expander("Show Raw Extracted Text (for debugging)"):
+        if st.session_state.extracted_lines:
+            st.code("\n".join(st.session_state.extracted_lines))
+        else:
+            st.info("No text was extracted from the image. This indicates a problem with the image quality or content.")
