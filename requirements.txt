@@ -10,3 +10,4 @@ plotly
 haversine
 gymnasium
 stable-baselines3[extra]
+scipy
