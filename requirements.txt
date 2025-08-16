@@ -10,4 +10,4 @@ plotly
 haversine
 gymnasium
 stable-baselines3[extra]
-scipy
+scipy==1.11.4
