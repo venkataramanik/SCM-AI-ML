@@ -10,5 +10,3 @@ plotly
 haversine
 gymnasium
 stable-baselines3[extra]
-crewai==0.28.8
-duckduckgo-search==5.3.0
