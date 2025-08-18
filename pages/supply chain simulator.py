@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from scipy.stats import beta, binom, norm, triangular
+# from scipy.stats import beta, binom, norm, triangular  # ❌ Not needed; remove to avoid import errors
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -64,7 +64,7 @@ def run_simulation(num_sims, demand_mean, demand_std, lead_time_params):
         lead_time = int(np.round(np.random.triangular(lt_min, lt_mode, lt_max)))
         
         # 2. Simulate Total Demand during lead time
-        total_demand = sum(np.random.normal(demand_mean, demand_std, lead_time))
+        total_demand = float(np.sum(np.random.normal(demand_mean, demand_std, lead_time)))
         
         # 3. Calculate Inventory Position at arrival
         reorder_point = 800
@@ -128,7 +128,7 @@ We'll use Bayesian inference to update our belief about the lead time distributi
 initial_mode = 6
 new_data_mean = 6.5
 new_data_count = 20
-prior_count = 10 # A notional prior 'data count' to weight our initial belief
+prior_count = 10  # A notional prior 'data count' to weight our initial belief
 posterior_mode = (initial_mode * prior_count + new_data_mean * new_data_count) / (prior_count + new_data_count)
 posterior_lead_time_params = (5, posterior_mode, 7)
 
@@ -151,25 +151,4 @@ with col3:
         delta=f"${posterior_results['Total Cost'].mean() - initial_results['Total Cost'].mean():,.2f}"
     )
     st.metric(
-        label="Probability of Stockout (Updated)",
-        value=f"{(posterior_results['Stockout Cost'] > 0).mean():.2%}",
-        delta=f"{(posterior_results['Stockout Cost'] > 0).mean() - (initial_results['Stockout Cost'] > 0).mean():.2%}"
-    )
-
-with col4:
-    fig_hist_posterior = px.histogram(
-        posterior_results,
-        x="Total Cost",
-        nbins=50,
-        title="Distribution of Updated Total Costs"
-    )
-    st.plotly_chart(fig_hist_posterior, use_container_width=True)
-
-st.markdown("---")
-st.success("""
-### Conclusion
-By incorporating real-world data through **Bayesian inference**, our model provided a more accurate and likely higher estimate of the total costs. This demonstrates the power of a combined approach:
-
-- **Monte Carlo** reveals the range of possible outcomes.
-- **Bayesian methods** update our models with new evidence, making our predictions more robust and reliable.
-""")
+        label="Pr
