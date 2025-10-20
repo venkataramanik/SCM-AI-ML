@@ -26,7 +26,7 @@ st.markdown("""
 - How to tune alert thresholds based on cost trade-offs.
 - How to read metrics that matter to safety managers: precision, recall, and F1.
 
-#### Tech focus in plain terms
+#### Model focus
 - The model asks simple questions that split the data into clearer groups.
 - Splits are chosen to reduce mixing of outcomes (incident vs no incident).
 - Depth and minimum leaf size limit complexity to avoid overfitting.
