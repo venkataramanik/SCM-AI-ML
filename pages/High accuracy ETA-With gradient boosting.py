@@ -11,9 +11,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import xgboost as xgb
 import shap
 
-# --- STREAMLIT CONFIG (Avoids warnings related to plotting) ---
-# Removed deprecated st.set_option for PyPlot warning fix.
-
 # --------------------------------------------------------------------
 # ETA PREDICTOR 2.0 — HIGH-ACCURACY GRADIENT BOOSTING
 # --------------------------------------------------------------------
@@ -121,7 +118,7 @@ xgb_model = xgb.XGBRegressor(
     max_depth=max_depth,
     random_state=seed,
     objective='reg:squarederror',
-    # FIX for SHAP KeyError: 'base_score'
+    # Initial fix for SHAP compatibility
     booster='gbtree' 
 )
 xgb_model.fit(X_train, y_train)
@@ -163,7 +160,7 @@ To ensure we can still audit and trust every forecast, we use **SHAP** values. T
 """)
 
 # Select a single example from the test set 
-sample_index = np.argmax(np.abs(y_test - y_xgb)) # Find a trip with a large residual for drama
+sample_index = np.argmax(np.abs(y_test - y_xgb))
 X_sample = X_test[sample_index, :].reshape(1, -1)
 predicted_eta = y_xgb[sample_index]
 
@@ -174,7 +171,8 @@ st.markdown(f"""
 """)
 
 # Calculate SHAP values for the specific sample
-explainer = shap.TreeExplainer(xgb_model)
+# FIX: Pass X_train data to SHAP explainer to resolve persistent KeyError
+explainer = shap.TreeExplainer(xgb_model, data=X_train) 
 shap_values = explainer.shap_values(X_sample)
 
 # Create the Force Plot visualization
