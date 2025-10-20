@@ -257,8 +257,8 @@ st.caption("We attribute how each input pushed ETA up or down for this one predi
 
 try:
     # Use the model object (not the raw booster) to avoid string->float parsing issues
-    explainer = shap.Explainer(xgb_model, X_train, feature_names=feat_names)
-    explanation = explainer(X_sample)  # returns a shap.Explanation
+    explainer = shap.Explainer(xgb_model, X_train, feature_names=FEATURES)
+    explanation = explainer(X_sample)  # returns a shap.Explanation object
 
     # Try a matplotlib waterfall plot (no JS; Streamlit-friendly)
     try:
@@ -269,7 +269,7 @@ try:
 
     except Exception:
         # Fallback: simple contribution bar chart if waterfall fails
-        contrib = pd.Series(explanation.values[0], index=feat_names).sort_values()
+        contrib = pd.Series(explanation.values[0], index=FEATURES).sort_values()
         fig_bar = plt.figure()
         plt.barh(contrib.index, contrib.values)
         plt.title("SHAP Contributions (Fallback)")
@@ -291,6 +291,7 @@ except Exception as e:
         "`shap==0.40.0`, `xgboost==1.6.2`, `numpy==1.24.4`. "
         "You can also try `shap==0.41.0` or newer."
     )
+
 
 st.markdown("---")
 
