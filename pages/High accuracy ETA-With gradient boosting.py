@@ -118,7 +118,7 @@ xgb_model = xgb.XGBRegressor(
     max_depth=max_depth,
     random_state=seed,
     objective='reg:squarederror',
-    # Initial fix for SHAP compatibility
+    # Fix for SHAP compatibility
     booster='gbtree' 
 )
 xgb_model.fit(X_train, y_train)
@@ -156,7 +156,15 @@ st.markdown("---")
 st.header("2. Explaining the Black Box: Individual Prediction Contributions (SHAP)")
 
 st.markdown("""
-To ensure we can still audit and trust every forecast, we use **SHAP** values. This advanced technique instantly shows **which specific factors pushed the predicted ETA higher or lower** for any single trip, giving auditors feature-by-feature accountability.
+To ensure we can still audit and trust every high-accuracy forecast, we use **SHAP** values.
+
+#### 💡 The Tug of War Analogy
+Imagine the predicted ETA for a shipment is the result of a **Tug of War** where different features (Distance, Stops, Weather) are the players.
+* The **mid-line** of the rope is the **average ETA** for all shipments.
+* Factors that pull the prediction **higher** (like bad weather or long distance) are scored as **positive contributors (RED)**.
+* Factors that pull the prediction **lower** (like short distance or being on a weekend) are scored as **negative contributors (BLUE)**.
+
+SHAP runs thousands of "simulations" to calculate the **fair contribution** of each feature to the final ETA, giving us feature-by-feature accountability for the final number.
 """)
 
 # Select a single example from the test set 
@@ -170,27 +178,49 @@ st.markdown(f"""
 - **Predicted ETA:** **{predicted_eta:.2f} hours**
 """)
 
-# Calculate SHAP values for the specific sample
-# FIX: Pass X_train data to SHAP explainer to resolve persistent KeyError
-explainer = shap.TreeExplainer(xgb_model, data=X_train) 
-shap_values = explainer.shap_values(X_sample)
+# ----------------------------------------------------------------------
+# FINAL ROBUST FIX: Serialize/Deserialize model to ensure SHAP compatibility
+# ----------------------------------------------------------------------
+
+try:
+    # 1. Serialize the model to a temporary buffer
+    bst_bytes = xgb_model.save_raw()
+
+    # 2. Load the model using XGBoost's native Booster API
+    bst = xgb.Booster()
+    bst.load_buffer(bst_bytes)
+
+    # 3. Initialize SHAP explainer using the newly loaded booster object
+    explainer = shap.TreeExplainer(bst, data=X_train) 
+    shap_values = explainer.shap_values(X_sample)
+
+except Exception as e:
+    st.error(f"Failed to initialize SHAP explainer. Error: {e}")
+    st.warning("A deep-seated version conflict between SHAP and XGBoost is likely. Ensure both packages are the latest stable versions in your requirements.txt.")
+    # Fallback to prevent app crash if SHAP fails
+    shap_values = [0] * len(feat_names) 
+    explainer = None
+
 
 # Create the Force Plot visualization
 st.subheader("Factor Contribution Breakdown")
-st.caption("The **Base Value** is the average ETA for all trips. Factors pushing the prediction higher (delay) are **RED**; factors pushing it lower (efficiency) are **BLUE**.")
+st.caption("Factors pushing the prediction higher (delay) are **RED**; factors pushing it lower (efficiency) are **BLUE**.")
 
-# Generate the plot
-fig_shap = plt.figure()
-shap.force_plot(
-    explainer.expected_value, 
-    shap_values, 
-    X_sample, 
-    feature_names=feat_names, 
-    matplotlib=True, 
-    show=False
-)
-plt.xlabel("Model Output (Predicted ETA in Hours)")
-st.pyplot(fig_shap)
+# Generate the plot ONLY if the explainer succeeded
+if explainer:
+    fig_shap = plt.figure()
+    shap.force_plot(
+        explainer.expected_value, 
+        shap_values, 
+        X_sample, 
+        feature_names=feat_names, 
+        matplotlib=True, 
+        show=False
+    )
+    plt.xlabel("Model Output (Predicted ETA in Hours)")
+    st.pyplot(fig_shap)
+else:
+    st.write("Cannot display SHAP plot due to environment error.")
 
 st.markdown("""
 #### Non-Technical Interpretation Blurb 📢
