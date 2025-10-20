@@ -36,6 +36,17 @@ deliver **tighter ETA windows**. We keep trust using **SHAP** to audit individua
 """
 )
 
+st.header("What is SHAP")
+st.markdown(
+    """
+**SHAP (SHapley Additive exPlanations)** helps us understand **why a machine-learning model made a specific prediction**.  
+
+When a model gives an ETA, SHAP breaks that number into **individual feature contributions** — showing how distance, weather, or number of stops each pushed the ETA **up** or **down**.  
+
+Even though Gradient Boosting is a complex model, SHAP lets us **see and explain its reasoning** in a transparent, human way — building trust with dispatchers, planners, and customers who rely on its predictions.
+"""
+)
+
 st.markdown("---")
 
 # -------------- Sidebar controls --------------
