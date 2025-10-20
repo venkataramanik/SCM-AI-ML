@@ -33,7 +33,7 @@ st.markdown("""
 - Each record becomes a labeled example: inputs are sensor features, target is whether a failure occurred within 7 days.
 - The tree learns threshold rules, such as: if engine_temp_max > 230 and oil_pressure_min < 20 and vibration_rms > 4.5, then failure risk is high.
 
-#### Tech focus in plain terms
+#### Model info
 - The model tries questions that best separate failures from healthy vehicles.
 - It measures how mixed a group is and chooses questions that make groups purer.
 - Depth and minimum leaf size control how specific the rules get to avoid overfitting.
