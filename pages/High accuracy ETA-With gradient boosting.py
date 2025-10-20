@@ -238,7 +238,6 @@ else:
 # -------------------------- SHAP (case-level explanation) --------------------
 st.header("2. Explaining a Single Prediction (SHAP)")
 
-# pick a challenging example for explanation
 case_idx = int(np.argmax(np.abs(y_test - y_xgb)))
 X_sample = X_test[case_idx:case_idx+1, :].astype(np.float32)
 predicted_eta = float(y_xgb[case_idx])
@@ -256,19 +255,19 @@ st.markdown(
 st.caption("We attribute how each input pushed ETA up or down for this one prediction using SHAP.")
 
 try:
-    # Use the model object (not the raw booster) to avoid string->float parsing issues
-    explainer = shap.Explainer(xgb_model, X_train, feature_names=FEATURES)
-    explanation = explainer(X_sample)  # returns a shap.Explanation object
+    # ✅ FIX: make the model callable for shap.Explainer
+    predict_fn = lambda X: xgb_model.predict(X.astype(np.float32))
+    explainer = shap.Explainer(predict_fn, X_train, feature_names=FEATURES)
+    explanation = explainer(X_sample)  # shap.Explanation
 
-    # Try a matplotlib waterfall plot (no JS; Streamlit-friendly)
+    # Prefer a matplotlib waterfall (Streamlit-friendly)
     try:
         fig_wf = plt.figure()
         shap.plots.waterfall(explanation[0], show=False)
         plt.title("SHAP Waterfall — Contribution to Predicted ETA (hours)")
         st.pyplot(fig_wf, clear_figure=True)
-
     except Exception:
-        # Fallback: simple contribution bar chart if waterfall fails
+        # Minimal fallback: bar chart
         contrib = pd.Series(explanation.values[0], index=FEATURES).sort_values()
         fig_bar = plt.figure()
         plt.barh(contrib.index, contrib.values)
@@ -276,21 +275,27 @@ try:
         plt.xlabel("Contribution to ETA (hours)")
         st.pyplot(fig_bar, clear_figure=True)
 
-    st.markdown(
-        """
-- Positive values push ETA **higher** (delay factors).  
-- Negative values pull ETA **lower** (efficiency factors).  
-This provides an immediate audit trail for the specific forecast.
-        """
-    )
+except Exception as e1:
+    # 🔁 Bulletproof fallback using XGBoost's native SHAP (no shap package logic)
+    try:
+        booster = xgb_model.get_booster()
+        dtest_single = xgb.DMatrix(X_sample, feature_names=FEATURES)
+        contribs = booster.predict(dtest_single, pred_contribs=True)  # includes bias as last column
+        expected_value = float(contribs[0, -1])
+        shap_vals = contribs[0, :-1]
 
-except Exception as e:
-    st.error(f"SHAP explanation failed: {e}")
-    st.warning(
-        "If this persists, keep the dtype casts and use: "
-        "`shap==0.40.0`, `xgboost==1.6.2`, `numpy==1.24.4`. "
-        "You can also try `shap==0.41.0` or newer."
-    )
+        contrib = pd.Series(shap_vals, index=FEATURES).sort_values()
+        fig_bar = plt.figure()
+        plt.barh(contrib.index, contrib.values)
+        plt.title("SHAP Contributions (XGBoost native)")
+        plt.xlabel("Contribution to ETA (hours)")
+        st.pyplot(fig_bar, clear_figure=True)
+
+        st.info("Displayed using XGBoost's native SHAP fallback (pred_contribs=True).")
+    except Exception as e2:
+        st.error(f"SHAP explanation failed: {e1}")
+        st.error(f"Fallback (XGBoost native) also failed: {e2}")
+        st.warning("Ensure: numpy==1.24.4, xgboost==1.6.2, shap==0.40.0 or try shap>=0.41.0.")
 
 
 st.markdown("---")
