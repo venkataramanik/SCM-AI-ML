@@ -235,9 +235,10 @@ if fig_imp:
 else:
     st.info("Feature importance not available in this environment.")
 
-# -------------------------- SHAP (case-level explanation) --------------------
-st.header("2. Explaining a Single Prediction (SHAP)")
+# -------------------- Per-shipment explanation (XGBoost native TreeSHAP) --------------------
+st.header("2. Why this ETA? (Per-feature contributions)")
 
+# Choose an interesting test case (largest absolute error)
 case_idx = int(np.argmax(np.abs(y_test - y_xgb)))
 X_sample = X_test[case_idx:case_idx+1, :].astype(np.float32)
 predicted_eta = float(y_xgb[case_idx])
@@ -252,50 +253,37 @@ st.markdown(
 """
 )
 
-st.caption("We attribute how each input pushed ETA up or down for this one prediction using SHAP.")
-
 try:
-    # ✅ FIX: make the model callable for shap.Explainer
-    predict_fn = lambda X: xgb_model.predict(X.astype(np.float32))
-    explainer = shap.Explainer(predict_fn, X_train, feature_names=FEATURES)
-    explanation = explainer(X_sample)  # shap.Explanation
+    # Use XGBoost's native SHAP (TreeSHAP) for rock-solid contributions
+    booster = xgb_model.get_booster()
 
-    # Prefer a matplotlib waterfall (Streamlit-friendly)
-    try:
-        fig_wf = plt.figure()
-        shap.plots.waterfall(explanation[0], show=False)
-        plt.title("SHAP Waterfall — Contribution to Predicted ETA (hours)")
-        st.pyplot(fig_wf, clear_figure=True)
-    except Exception:
-        # Minimal fallback: bar chart
-        contrib = pd.Series(explanation.values[0], index=FEATURES).sort_values()
-        fig_bar = plt.figure()
-        plt.barh(contrib.index, contrib.values)
-        plt.title("SHAP Contributions (Fallback)")
-        plt.xlabel("Contribution to ETA (hours)")
-        st.pyplot(fig_bar, clear_figure=True)
+    # Ensure feature names flow through (important for readable bars)
+    dtest_single = xgb.DMatrix(X_sample, feature_names=FEATURES)
+    contribs = booster.predict(dtest_single, pred_contribs=True)  # last column = bias / expected value
 
-except Exception as e1:
-    # 🔁 Bulletproof fallback using XGBoost's native SHAP (no shap package logic)
-    try:
-        booster = xgb_model.get_booster()
-        dtest_single = xgb.DMatrix(X_sample, feature_names=FEATURES)
-        contribs = booster.predict(dtest_single, pred_contribs=True)  # includes bias as last column
-        expected_value = float(contribs[0, -1])
-        shap_vals = contribs[0, :-1]
+    expected_value = float(contribs[0, -1])
+    shap_vals = contribs[0, :-1]  # per-feature contributions
 
-        contrib = pd.Series(shap_vals, index=FEATURES).sort_values()
-        fig_bar = plt.figure()
-        plt.barh(contrib.index, contrib.values)
-        plt.title("SHAP Contributions (XGBoost native)")
-        plt.xlabel("Contribution to ETA (hours)")
-        st.pyplot(fig_bar, clear_figure=True)
+    # Build a tidy series for plotting
+    contrib = pd.Series(shap_vals, index=FEATURES).sort_values()
 
-        st.info("Displayed using XGBoost's native SHAP fallback (pred_contribs=True).")
-    except Exception as e2:
-        st.error(f"SHAP explanation failed: {e1}")
-        st.error(f"Fallback (XGBoost native) also failed: {e2}")
-        st.warning("Ensure: numpy==1.24.4, xgboost==1.6.2, shap==0.40.0 or try shap>=0.41.0.")
+    # Fresh, single-use figure (avoid reuse/clear issues)
+    fig, ax = plt.subplots()
+    ax.barh(contrib.index, contrib.values)
+    ax.set_title("Per-feature contribution to ETA (hours)")
+    ax.set_xlabel("Contribution (+ delays / – saves time)")
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+
+    st.caption(
+        "Bars to the right **increase** ETA (delays). Bars to the left **decrease** ETA (efficiencies). "
+        f"Baseline (expected) ETA ≈ **{expected_value:.2f} h**; baseline + contributions ≈ **{predicted_eta:.2f} h**."
+    )
+
+except Exception as e2:
+    st.error(f"Per-shipment explanation failed: {e2}")
+    st.warning("If you must use `shap` visuals, keep float32 casts, avoid `clear_figure=True`, and create a new figure each render.")
+
 
 
 st.markdown("---")
