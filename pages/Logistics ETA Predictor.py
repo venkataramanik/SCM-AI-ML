@@ -8,6 +8,9 @@ from sklearn.tree import DecisionTreeRegressor, plot_tree
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+# Set Matplotlib style for better Streamlit rendering
+plt.style.use('ggplot')
+
 # --------------------------------------------------------------------
 # ETA PREDICTOR — REGRESSION TREE (Business-Focused Demo)
 # --------------------------------------------------------------------
@@ -179,8 +182,37 @@ If your **Mean Absolute Error (MAE)** is **{mae:.2f} hours**, you know, on avera
 """)
 st.markdown("---")
 
+# ------------------- NEW: Residuals Plot (Generalization) --------------------
+st.header("2. Performance on Unseen Data: The Residuals Plot")
+st.markdown("This plot shows how tightly the predictions (y-axis) match the actual observed ETAs (x-axis) on the reserved **test set**. A good model should have points clustering tightly along the 45-degree line.")
+
+# Create the plot
+fig_resid, ax_resid = plt.subplots(figsize=(8, 6))
+ax_resid.scatter(y_test, y_pred, alpha=0.6, label="Decision Tree Prediction", color='#1f77b4')
+
+if show_linear_baseline:
+    ax_resid.scatter(y_test, y_lin, alpha=0.3, label="Linear Model Baseline", color='gray')
+
+# 45-degree line for perfect prediction
+ax_resid.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', label="Perfect Prediction (y=x)")
+
+ax_resid.set_xlabel("Actual ETA (hours)")
+ax_resid.set_ylabel("Predicted ETA (hours)")
+ax_resid.set_title("Predicted vs. Actual ETA on Test Data")
+ax_resid.legend()
+fig_resid.tight_layout()
+st.pyplot(fig_resid)
+
+st.markdown(f"""
+#### Interpretation:
+- **Tight Cluster:** The Decision Tree's points (blue) should be clustered **closer** to the red line than the Linear Model's points (gray), confirming the Tree's superior accuracy.
+- **Outliers:** Points far from the line represent trips with high **Residuals** (large errors), likely due to the noise ($\sigma={noise_sd:.1f}$) or non-modeled factors.
+""")
+
+st.markdown("---")
+
 # ------------------- Partial dependence style slices ---------------
-st.header("2. Model Behavior: Capturing Tipping Points")
+st.header("3. Model Behavior: Capturing Tipping Points")
 st.markdown("The Decision Tree captures **nonlinear relationships** where a simple linear model cannot. Note how the line for the Tree is step-wise, reflecting the discrete rules it has learned.")
 colA, colB = st.columns(2)
 
@@ -240,7 +272,7 @@ with colB:
 st.markdown("---")
 
 # ------------------------- Feature importance ----------------------
-st.header("3. Auditability: Which Factors Matter Most?")
+st.header("4. Auditability: Which Factors Matter Most?")
 st.markdown("The feature importance helps identify the most effective levers for reducing or stabilizing ETA.")
 
 feat_names = ["distance_miles", "weather_bad", "stops", "region", "weekend"]
@@ -249,7 +281,7 @@ fi_df = pd.DataFrame({"feature": feat_names, "importance": importances}).sort_va
 st.dataframe(fi_df, use_container_width=True)
 
 # -------------------------- Tree visualization ---------------------
-st.header("4. Operational Rules: The Decision Flowchart")
+st.header("5. Operational Rules: The Decision Flowchart")
 st.caption("Each split is a discovered rule. The final value in the box is the **average predicted ETA (in hours)** for all trips that follow that path.")
 fig_tree, ax_tree = plt.subplots(figsize=(11, 8))
 plot_tree(
@@ -267,7 +299,7 @@ fig_tree.tight_layout()
 st.pyplot(fig_tree)
 
 # -------------------------- Scenario estimation --------------------
-st.header("5. Scenario Analysis: Predict and Explain")
+st.header("6. Scenario Analysis: Predict and Explain")
 st.markdown("Test a specific shipment's parameters to get its predicted ETA based on the learned rules.")
 
 c1, c2, c3 = st.columns(3)
@@ -312,13 +344,44 @@ else:
 
 st.markdown("---")
 
+# ------------------- NEW: MLOps Monitoring (Data Drift) --------------------
+st.header("7. MLOps Monitoring: Detecting Data Drift")
+st.markdown("In production, models degrade when the new data's characteristics shift away from the training data. This is **Data Drift**—a critical MLOps concern. We can monitor this by comparing feature distributions.")
+
+# Simulate a shift in production data (e.g., the company starts running longer routes)
+df_production = df.copy()
+# Simulate drift by making 20% of new trips significantly longer
+drift_size = int(0.2 * n)
+# Perturb the distances in a subset of the production data
+perturb_indices = df_production.sample(n=drift_size, random_state=42).index
+df_production.loc[perturb_indices, 'distance_miles'] += 200
+
+# Create the plot
+fig_drift, ax_drift = plt.subplots(figsize=(8, 4))
+ax_drift.hist(df['distance_miles'], bins=30, alpha=0.6, label="Training Data Distribution", density=True)
+ax_drift.hist(df_production['distance_miles'], bins=30, alpha=0.6, label="Current Production Data", density=True)
+
+ax_drift.set_xlabel("Distance (miles)")
+ax_drift.set_ylabel("Density")
+ax_drift.set_title("Distribution Shift in Key Feature: Distance")
+ax_drift.legend()
+fig_drift.tight_layout()
+st.pyplot(fig_drift)
+
+st.markdown("""
+#### Monitoring Insight:
+The distribution of distances in the current **Production Data** has clearly shifted, showing a higher density of longer trips (the second hump). If this drift persists beyond a set threshold (e.g., a **Kolmogorov-Smirnov test** fails), it signals the model needs **retraining** to ensure its rules remain valid for the new operational reality.
+""")
+
+st.markdown("---")
+
 # -------------------------- Business explanation -------------------
 st.header("Key Takeaways for Logistics Operations")
 
 st.markdown(
     """
 1.  **Trust Through Transparency:** The Regression Tree's strength is that it's a **white-box model**. Every ETA is traceable back to a small, finite set of if/then rules visible in the flowchart. This is vital for **dispute resolution** and building trust with planning teams.
-2.  **Validating Operational Knowledge:** Review the **Regression Tree Diagram** with your dispatchers. If a split (e.g., Distance > 400 miles) aligns with their real-world experience, the model is incorporating true operational knowledge.
-3.  **Tighter Service Levels:** By capturing the **nonlinear interactions** (like how bad weather affects long hauls disproportionately, Section 2), the tree produces a much more accurate ETA than a linear model, allowing the business to offer **tighter, more competitive service windows** without jeopardizing on-time delivery guarantees.
+2.  **MLOps Readiness:** By having features derived from real-time streams (telematics) and incorporating **drift monitoring** (Section 7), this system is ready for automated, scalable production deployment and maintenance.
+3.  **Tighter Service Levels:** By capturing the **nonlinear interactions** (like how bad weather affects long hauls disproportionately, Section 3), the tree produces a much more accurate ETA than a linear model, allowing the business to offer **tighter, more competitive service windows** without jeopardizing on-time delivery guarantees.
 """
 )
