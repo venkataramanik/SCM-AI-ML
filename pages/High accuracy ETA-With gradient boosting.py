@@ -235,12 +235,13 @@ if fig_imp:
 else:
     st.info("Feature importance not available in this environment.")
 
-# -------------- SHAP (case-level explanation) --------------
-st.header("2. Case-Level Explanation (SHAP)")
+# -------------------------- SHAP (case-level explanation) --------------------
+st.header("2. Explaining a Single Prediction (SHAP)")
 
-case_idx = pick_case_index(y_test, y_xgb)
-X_sample = X_test[case_idx, :].reshape(1, -1)
-predicted_eta = y_xgb[case_idx]
+# pick a challenging example for explanation
+case_idx = int(np.argmax(np.abs(y_test - y_xgb)))
+X_sample = X_test[case_idx:case_idx+1, :].astype(np.float32)
+predicted_eta = float(y_xgb[case_idx])
 
 st.markdown(
     f"""
@@ -252,47 +253,44 @@ st.markdown(
 """
 )
 
-st.caption("We use SHAP to attribute how each input pushed ETA up or down for this one prediction.")
+st.caption("We attribute how each input pushed ETA up or down for this one prediction using SHAP.")
 
-# Robust SHAP via native booster (fixes 'save_raw' / 'base_score' issues in older xgboost+shap combos)
 try:
-    booster = xgb_model.get_booster()
-    explainer = shap.TreeExplainer(booster, data=X_train)
-    shap_vals = explainer.shap_values(X_sample)  # shape (1, n_features)
-    expected_value = explainer.expected_value
+    # Use the model object (not the raw booster) to avoid string->float parsing issues
+    explainer = shap.Explainer(xgb_model, X_train, feature_names=feat_names)
+    explanation = explainer(X_sample)  # returns a shap.Explanation
 
-    # Force plot (matplotlib) — guard in case of backend quirks
+    # Try a matplotlib waterfall plot (no JS; Streamlit-friendly)
     try:
-        fig = plt.figure()
-        shap.force_plot(
-            base_value=expected_value,
-            shap_values=shap_vals,
-            features=X_sample,
-            feature_names=FEATURES,
-            matplotlib=True,
-            show=False
-        )
-        plt.xlabel("Model output (Predicted ETA in hours)")
-        st.pyplot(fig, clear_figure=True)
+        fig_wf = plt.figure()
+        shap.plots.waterfall(explanation[0], show=False)
+        plt.title("SHAP Waterfall — Contribution to Predicted ETA (hours)")
+        st.pyplot(fig_wf, clear_figure=True)
+
     except Exception:
-        # Fallback: simple contribution bar chart
-        contrib = pd.Series(shap_vals.flatten(), index=FEATURES).sort_values()
-        fig2 = plt.figure()
+        # Fallback: simple contribution bar chart if waterfall fails
+        contrib = pd.Series(explanation.values[0], index=feat_names).sort_values()
+        fig_bar = plt.figure()
         plt.barh(contrib.index, contrib.values)
         plt.title("SHAP Contributions (Fallback)")
         plt.xlabel("Contribution to ETA (hours)")
-        st.pyplot(fig2, clear_figure=True)
+        st.pyplot(fig_bar, clear_figure=True)
 
     st.markdown(
         """
-- Positive bars push ETA **higher** (delay factors).  
-- Negative bars pull ETA **lower** (efficiency factors).  
+- Positive values push ETA **higher** (delay factors).  
+- Negative values pull ETA **lower** (efficiency factors).  
 This provides an immediate audit trail for the specific forecast.
         """
     )
+
 except Exception as e:
     st.error(f"SHAP explanation failed: {e}")
-    st.warning("Check versions: numpy==1.24.4, xgboost==1.6.2, shap==0.40.0")
+    st.warning(
+        "If this persists, keep the dtype casts and use: "
+        "`shap==0.40.0`, `xgboost==1.6.2`, `numpy==1.24.4`. "
+        "You can also try `shap==0.41.0` or newer."
+    )
 
 st.markdown("---")
 
