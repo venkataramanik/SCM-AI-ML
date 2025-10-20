@@ -1,287 +1,313 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Logistic Regression — Business-Focused Explainer (with tiny demo)
-Author: ChatGPT
-Run:
-  python logistic_regression_business_explainer.py
-Options:
-  --plot    Save a simple sigmoid & decision boundary plot to ./logreg_demo.png
-  --quiet   Print fewer details
-No external dependencies beyond numpy and matplotlib (optional for --plot).
-"""
+import streamlit as st
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-import sys
-import math
-from dataclasses import dataclass
-from typing import List, Tuple, Optional
+# ============================================================================
+# LOGISTIC REGRESSION – BUSINESS DEMO (On-Time Probability)
+# Includes: MLE/log-loss tracking, Accuracy/Precision/Recall/F1, Calibration, ROC
+# ============================================================================
 
-try:
-    import numpy as np
-except ImportError as e:
-    print("This script requires NumPy. Please install it (pip install numpy) and try again.")
-    sys.exit(1)
+st.title("Operational Risk Scoring with Logistic Regression")
 
-# Matplotlib is optional (only for --plot)
-try:
-    import matplotlib.pyplot as plt
-    HAS_MPL = True
-except Exception:
-    HAS_MPL = False
+st.markdown("""
+### 1) Business Question
+Which shipments are **at risk of being late**, and by **how much** (probability)?  
+We want a transparent risk score that dispatch and customer service can act on.
 
+### 2) Modeling Approach
+**Logistic Regression** estimates the **probability of on-time arrival (0–1)** from factors like distance,
+weather, and driver experience. You choose a **threshold** (e.g., 0.60) to convert probabilities into actions.
+""")
 
-# -----------------------------
-# Section 1: Plain-English Primer
-# -----------------------------
-PRIMER = """
-🧭 LOGISTIC REGRESSION — Business Explainer
+# ------------------------------- Sidebar -----------------------------------
+st.sidebar.header("Simulation Controls")
+n = st.sidebar.slider("Number of shipments", 200, 10000, 1500, 100)
+noise_scale = st.sidebar.slider("Outcome randomness (logit noise)", 0.0, 2.0, 0.6, 0.1)
+bad_weather_rate = st.sidebar.slider("Bad weather frequency", 0.0, 0.9, 0.35, 0.05)
+exp_max = st.sidebar.slider("Max driver experience (years)", 5, 25, 10, 1)
 
-What it does:
-    • Predicts the LIKELIHOOD (probability) that an outcome will happen (e.g., "on-time delivery").
-    • Outputs a score from 0 to 1 so you can rank by risk and act proactively.
+st.sidebar.header("Training (Gradient Descent)")
+lr = st.sidebar.slider("Learning rate", 0.0005, 0.5, 0.05, 0.0005)
+epochs = st.sidebar.slider("Iterations", 200, 20000, 3000, 100)
+fit_intercept = st.sidebar.checkbox("Fit intercept", value=True)
+show_loss = st.sidebar.checkbox("Show log-loss convergence", value=True)
 
-Why leaders use it:
-    • Transparent and explainable (weights show which factors raise/lower risk).
-    • Fast to train; works well with mid-size data; great baseline for risk scoring.
-    • Easy to operationalize (threshold or rank-based actions).
+st.sidebar.header("Scoring & Display")
+threshold = st.sidebar.slider("Action threshold (p on-time)", 0.1, 0.9, 0.6, 0.05)
+show_data = st.sidebar.checkbox("Show sample data", value=False)
+show_coeffs = st.sidebar.checkbox("Show coefficients", value=True)
+show_calibration = st.sidebar.checkbox("Show calibration (binned)", value=True)
+show_roc = st.sidebar.checkbox("Show ROC", value=True)
+show_pr = st.sidebar.checkbox("Show Precision-Recall curve", value=False)
 
-When to use it:
-    • Binary outcomes (yes/no): on-time vs late, churn vs retain, defect vs pass, fraud vs legit.
-    • When relationships are smooth and mostly linear in the *log-odds* space.
-    • When interpretability matters (compliance, audits, stakeholder trust).
-"""
+st.sidebar.header("Cost of Errors (optional)")
+cost_fp = st.sidebar.number_input("Cost of False Positive (alert when OK)", min_value=0.0, value=1.0, step=0.5)
+cost_fn = st.sidebar.number_input("Cost of False Negative (miss a late load)", min_value=0.0, value=5.0, step=0.5)
 
-PENSKE_STORY = """
-🚛 Penske-Style Example (Business Narrative)
+# --------------------------- Synthetic Data --------------------------------
+rng = np.random.default_rng(42)
+distance = rng.normal(300, 100, n)                     # miles
+weather = rng.binomial(1, bad_weather_rate, n)         # 1=bad, 0=clear
+experience = rng.uniform(0, exp_max, n)                # years
 
-Goal:
-    Reduce late deliveries by proactively spotting at-risk loads.
+# "True" relationship (unknown to the learner)
+# Intercept=+2.0, distance=-0.006, bad weather=-1.0, experience=+0.25
+z = 2.0 + (-0.006)*distance + (-1.0)*weather + (0.25)*experience
+z_noisy = z + rng.normal(0, noise_scale, n)            # unobserved factors
+p_on_time_true = 1 / (1 + np.exp(-z_noisy))
+y = (rng.uniform(0, 1, n) < p_on_time_true).astype(int)  # 1=On-Time, 0=Late
 
-Inputs a dispatcher already watches:
-    • Distance (miles)
-    • Weather (bad=1, clear=0)
-    • Driver experience (years)
-    • Load type (fragile=1, normal=0)
-    • Day of week / Time window
+df = pd.DataFrame({
+    "distance_miles": distance,
+    "weather_bad": weather,
+    "driver_experience_years": experience,
+    "on_time": y,
+    "p_on_time_true": p_on_time_true
+})
+if show_data:
+    st.subheader("Sample Data")
+    st.dataframe(df.head(10))
 
-What the model gives you:
-    • A probability for each shipment being on-time (e.g., 0.86 = 86%).
-How you use it:
-    • >0.90 → standard handling
-    • 0.60–0.90 → notify customer / watchlist
-    • <0.60 → reroute, swap driver, or adjust promise time
-"""
+# --------------------------- Logistic Regression ---------------------------
+def sigmoid(a):
+    return 1 / (1 + np.exp(-np.clip(a, -500, 500)))
 
+def prepare_X(X, add_intercept=True):
+    return np.hstack([np.ones((X.shape[0], 1)), X]) if add_intercept else X
 
-# -----------------------------
-# Section 2: Tiny Hands-On Demo (from scratch, with NumPy)
-# -----------------------------
-@dataclass
-class LogRegConfig:
-    lr: float = 0.1           # learning rate
-    epochs: int = 2000        # training iterations
-    fit_intercept: bool = True
-    random_state: int = 42
+X = np.c_[distance, weather, experience]
+Xb = prepare_X(X, add_intercept=fit_intercept)
+y_vec = y.reshape(-1, 1)
 
+# Initialize weights small random
+w = rng.normal(0.0, 0.01, (Xb.shape[1], 1))
 
-class SimpleLogisticRegression:
-    """
-    Minimal logistic regression implemented with NumPy.
-    • Binary classification only (labels 0/1).
-    • Gradient descent on cross-entropy loss.
-    """
-    def __init__(self, config: LogRegConfig = LogRegConfig()):
-        self.cfg = config
-        self.w: Optional[np.ndarray] = None  # weights (including intercept if fit_intercept=True)
+loss_history = []
+for _ in range(epochs):
+    logits = Xb @ w
+    probs = sigmoid(logits)
+    # Gradient of negative log-likelihood (cross-entropy)
+    grad = (Xb.T @ (probs - y_vec)) / Xb.shape[0]
+    w -= lr * grad
+    # Log-loss (negative log-likelihood) tracking
+    eps = 1e-10
+    loss = -np.mean(y_vec*np.log(probs + eps) + (1 - y_vec)*np.log(1 - probs + eps))
+    loss_history.append(loss)
 
-    @staticmethod
-    def _sigmoid(z: np.ndarray) -> np.ndarray:
-        # Stable sigmoid
-        z = np.clip(z, -500, 500)
-        return 1.0 / (1.0 + np.exp(-z))
+probs_hat = sigmoid(Xb @ w).ravel()
+preds = (probs_hat >= threshold).astype(int)
 
-    def _prepare_X(self, X: np.ndarray) -> np.ndarray:
-        if self.cfg.fit_intercept:
-            intercept = np.ones((X.shape[0], 1))
-            return np.hstack([intercept, X])
-        return X
+# ------------------------------- Metrics -----------------------------------
+acc = (preds == y).mean()
+tp = int(((preds==1) & (y==1)).sum())
+tn = int(((preds==0) & (y==0)).sum())
+fp = int(((preds==1) & (y==0)).sum())
+fn = int(((preds==0) & (y==1)).sum())
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "SimpleLogisticRegression":
-        rng = np.random.default_rng(self.cfg.random_state)
-        Xb = self._prepare_X(X).astype(float)
-        y = y.astype(float).reshape(-1, 1)
+# Extended metrics
+precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
-        # Initialize weights
-        self.w = rng.normal(loc=0.0, scale=0.01, size=(Xb.shape[1], 1))
+st.subheader("Quick Results")
+st.write(f"**Accuracy:** {acc:.3f}  |  **Precision:** {precision:.3f}  |  **Recall:** {recall:.3f}  |  **F1:** {f1:.3f}")
+st.write(f"Threshold: {threshold:.2f}  |  **Final Log-Loss:** {loss_history[-1]:.4f}")
 
-        for _ in range(self.cfg.epochs):
-            logits = Xb @ self.w
-            probs = self._sigmoid(logits)
-            # Cross-entropy loss gradient
-            grad = Xb.T @ (probs - y) / Xb.shape[0]
-            self.w -= self.cfg.lr * grad
-        return self
+cm = pd.DataFrame(
+    [[tp, fp],
+     [fn, tn]],
+    index=pd.Index(["Pred On-Time=1 (Alerts)", "Pred On-Time=0 (No Alerts)"], name="Prediction"),
+    columns=pd.Index(["Actual On-Time=1", "Actual On-Time=0"], name="Reality")
+)
+st.write("**Confusion Matrix**")
+st.dataframe(cm)
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        assert self.w is not None, "Model not trained"
-        Xb = self._prepare_X(X).astype(float)
-        probs = self._sigmoid(Xb @ self.w)
-        return probs.ravel()
+# Cost of errors
+expected_cost = fp * cost_fp + fn * cost_fn
+st.write(f"**Estimated Cost** (given current threshold):  FP×{cost_fp:.1f} + FN×{cost_fn:.1f} = **{expected_cost:.1f}**")
 
-    def predict(self, X: np.ndarray, threshold: float = 0.5) -> np.ndarray:
-        return (self.predict_proba(X) >= threshold).astype(int)
+# ------------------------------- Loss Plot ---------------------------------
+if show_loss:
+    st.subheader("Training Error (Log-Loss over Iterations)")
+    fig_loss, ax_loss = plt.subplots(figsize=(6,4))
+    ax_loss.plot(loss_history, label="Log-Loss")
+    ax_loss.set_xlabel("Iteration")
+    ax_loss.set_ylabel("Loss (negative log-likelihood)")
+    ax_loss.set_title("Model Convergence (MLE via Log-Loss Minimization)")
+    ax_loss.legend()
+    st.pyplot(fig_loss)
 
-    def coefficients(self) -> np.ndarray:
-        assert self.w is not None, "Model not trained"
-        return self.w.ravel()
+# ------------------------------- Plots -------------------------------------
+# 1) Probability vs Distance (holding other factors)
+st.subheader("Probability Curve (holding weather and experience fixed)")
+fig1, ax1 = plt.subplots(figsize=(8,5))
+dist_grid = np.linspace(max(30, distance.min()), distance.max()+30, 300)
+weather_hold = 0  # clear
+exp_hold = max(1.0, exp_max/2)
+X_grid = np.c_[dist_grid, np.full_like(dist_grid, weather_hold), np.full_like(dist_grid, exp_hold)]
+Xb_grid = prepare_X(X_grid, add_intercept=fit_intercept)
+p_grid = sigmoid(Xb_grid @ w).ravel()
+ax1.plot(dist_grid, p_grid, label=f"p(On-Time) | weather=clear, exp≈{exp_hold:.1f}y")
+ax1.axhline(threshold, linestyle="--", label="action threshold")
+ax1.set_xlabel("Distance (miles)")
+ax1.set_ylabel("Predicted Probability of On-Time")
+ax1.set_title("Learned Logistic Relationship")
+ax1.legend(loc="best")
+fig1.tight_layout()
+st.pyplot(fig1)
 
+# 2) Histogram of predicted probabilities
+st.subheader("Risk Distribution (Predicted Probabilities)")
+fig2, ax2 = plt.subplots(figsize=(8,5))
+ax2.hist(probs_hat, bins=30, alpha=0.9)
+ax2.axvline(threshold, linestyle="--")
+ax2.set_xlabel("Predicted p(On-Time)")
+ax2.set_ylabel("Shipments")
+ax2.set_title("Distribution of Risk Scores")
+fig2.tight_layout()
+st.pyplot(fig2)
 
-def make_synthetic_penske(n: int = 400, seed: int = 7) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-    """
-    Create a toy dataset mimicking logistics risk:
-      X[:,0] -> distance (miles) ~ N(300, 100)
-      X[:,1] -> weather (0 clear, 1 bad) ~ Bernoulli(p=0.35)
-      X[:,2] -> driver experience (years) ~ Uniform[0,10]
-    Label y: 1=On-Time, 0=Late, probabilistically generated via a hidden logistic rule.
-    """
-    rng = np.random.default_rng(seed)
-    distance = rng.normal(300, 100, n)
-    weather = rng.binomial(1, 0.35, n)
-    exp_years = rng.uniform(0, 10, n)
+# 3) Calibration: Do 0.8 scores happen ~80% of the time?
+if show_calibration:
+    st.subheader("Calibration (Do 0.8 scores happen ~80% of the time?)")
+    bins = np.linspace(0, 1, 11)
+    idx = np.digitize(probs_hat, bins) - 1
+    cal_rows = []
+    for b in range(10):
+        mask = idx == b
+        if mask.sum() > 0:
+            cal_rows.append([0.5*(bins[b]+bins[b+1]), y[mask].mean(), mask.sum()])
+    if cal_rows:
+        cal = np.array(cal_rows)
+        fig3, ax3 = plt.subplots(figsize=(6,5))
+        ax3.plot([0,1],[0,1],"--", label="perfect")
+        ax3.scatter(cal[:,0], cal[:,1], s=10+2*cal[:,2], label="binned")
+        ax3.set_xlabel("Predicted Probability (bin center)")
+        ax3.set_ylabel("Actual On-Time Rate")
+        ax3.set_title("Calibration Plot")
+        ax3.legend(loc="best")
+        fig3.tight_layout()
+        st.pyplot(fig3)
+    else:
+        st.info("Not enough data to compute calibration bins.")
 
-    # Hidden "true" weights for generating labels
-    # Intercept=2.0, distance weight = -0.006, weather weight = -1.0, experience weight = +0.25
-    z = 2.0 + (-0.006)*distance + (-1.0)*weather + (0.25)*exp_years
-    p_on_time = 1.0 / (1.0 + np.exp(-z))
-    y = (rng.uniform(0, 1, n) < p_on_time).astype(int)
+# 4) ROC curve (no sklearn)
+def compute_roc(y_true, score):
+    thr = np.unique(np.sort(score))[::-1]
+    tpr_list, fpr_list = [], []
+    P = (y_true==1).sum()
+    N = (y_true==0).sum()
+    tp_cum = fp_cum = 0
+    order = np.argsort(-score)
+    y_sorted = y_true[order]
+    s_sorted = score[order]
+    i = 0
+    for t in thr:
+        while i < len(s_sorted) and s_sorted[i] >= t:
+            if y_sorted[i]==1: tp_cum += 1
+            else: fp_cum += 1
+            i += 1
+        tpr_list.append(tp_cum / P if P>0 else 0)
+        fpr_list.append(fp_cum / N if N>0 else 0)
+    return np.array(fpr_list), np.array(tpr_list)
 
-    X = np.c_[distance, weather, exp_years]
-    feature_names = ["distance_miles", "weather_bad(1/0)", "driver_experience_years"]
-    return X, y, feature_names
+if show_roc:
+    st.subheader("ROC Curve (Ranking Quality)")
+    fpr, tpr = compute_roc(y, probs_hat)
+    auc = np.trapz(tpr, fpr)  # trapezoid AUC
+    fig4, ax4 = plt.subplots(figsize=(6,5))
+    ax4.plot(fpr, tpr, label=f"ROC (AUC={auc:.3f})")
+    ax4.plot([0,1],[0,1], "--", label="random")
+    ax4.set_xlabel("False Positive Rate")
+    ax4.set_ylabel("True Positive Rate")
+    ax4.set_title("Receiver Operating Characteristic")
+    ax4.legend(loc="lower right")
+    fig4.tight_layout()
+    st.pyplot(fig4)
 
+# 5) Precision-Recall curve (optional, no sklearn)
+def compute_pr(y_true, score):
+    # thresholds high->low; compute precision, recall at each cut
+    order = np.argsort(-score)
+    y_sorted = y_true[order]
+    tp, fp = 0, 0
+    P = (y_true==1).sum()
+    precisions, recalls = [], []
+    for i in range(len(score)):
+        if y_sorted[i] == 1:
+            tp += 1
+        else:
+            fp += 1
+        prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+        rec = tp / P if P > 0 else 0.0
+        precisions.append(prec)
+        recalls.append(rec)
+    return np.array(recalls), np.array(precisions)
 
-def train_and_report(quiet: bool = False, make_plot: bool = False) -> None:
-    X, y, feature_names = make_synthetic_penske(n=500, seed=11)
-    model = SimpleLogisticRegression(LogRegConfig(lr=0.1, epochs=3000, fit_intercept=True, random_state=1))
-    model.fit(X, y)
+if show_pr:
+    st.subheader("Precision-Recall Curve (Class-Imbalance Friendly)")
+    rec, prec = compute_pr(y, probs_hat)
+    fig5, ax5 = plt.subplots(figsize=(6,5))
+    ax5.plot(rec, prec, label="PR curve")
+    ax5.set_xlabel("Recall")
+    ax5.set_ylabel("Precision")
+    ax5.set_title("Precision-Recall")
+    ax5.legend(loc="best")
+    fig5.tight_layout()
+    st.pyplot(fig5)
 
-    # Coefficients
-    coefs = model.coefficients()
-    if not quiet:
-        print("\n🔧 TRAINED MODEL COEFFICIENTS (higher → increases odds of 'On-Time')")
-        for i, name in enumerate(["(intercept)"] + feature_names):
-            print(f"  {name:>28s} : {coefs[i]: .4f}")
+# --------------------------- Coefficients ----------------------------------
+if show_coeffs:
+    st.subheader("Model Coefficients (direction & strength)")
+    names = (["intercept"] if fit_intercept else []) + ["distance_miles", "weather_bad", "driver_experience_years"]
+    coeffs = w.ravel()
+    coef_df = pd.DataFrame({"feature": names, "weight": coeffs})
+    st.dataframe(coef_df)
 
-    # Score a few example loads (distance, weather, exp)
-    samples = np.array([
-        [120, 0, 6.0],   # short, clear, solid experience → likely on-time
-        [420, 1, 1.0],   # long, bad, inexperienced → risky
-        [300, 0, 2.5],   # mid, clear, low exp → moderate
-        [280, 1, 9.0],   # mid, bad, very experienced → experience offsets weather somewhat
-    ])
-    probs = model.predict_proba(samples)
+# ----------------------------- Scenario Tool -------------------------------
+st.markdown("---")
+st.subheader("Scenario Estimation")
+user_distance = st.slider("Enter distance (miles)", 50, 600, 250)
+user_weather = st.selectbox("Weather", ["clear (0)", "bad (1)"])
+user_weather_val = 0 if user_weather.startswith("clear") else 1
+user_exp = st.slider("Driver experience (years)", 0.0, float(exp_max), float(max(1.0, exp_max/2.0)), 0.5)
+X_user = np.array([[user_distance, user_weather_val, user_exp]])
+Xb_user = (np.hstack([np.ones((1,1)), X_user]) if fit_intercept else X_user)
+p_user = float(sigmoid(Xb_user @ w))
+st.write(f"Predicted **p(On-Time)**: **{p_user:.2f}**")
+st.write(f"Action at threshold {threshold:.2f}: **{'OK' if p_user>=threshold else 'Pre-alert / Mitigate'}**")
 
-    print("\n📊 SAMPLE SCORING (P(On-Time))")
-    for row, p in zip(samples, probs):
-        print(f"  distance={row[0]:.0f}  weather_bad={int(row[1])}  exp_years={row[2]:.1f}  →  p_on_time={p:0.3f}")
+# ------------------- What Measures Mean & How to Use Them -------------------
+st.markdown("""
+## What These Measures Mean — and How to Use Them
 
-    # Lightweight quality metric
-    preds = model.predict(X, threshold=0.5)
-    accuracy = (preds == y).mean()
-    if not quiet:
-        print(f"\n✅ Training accuracy (toy data, not cross-validated): {accuracy:.3f}")
+**Accuracy**  
+> Share of **all** predictions that were correct.  
+Use when classes are balanced and the cost of FP and FN is similar.
 
-    # Optional plot
-    if make_plot and HAS_MPL:
-        try:
-            fig = plt.figure(figsize=(6, 5))
-            # Plot probability vs. distance for a fixed weather/experience
-            distances = np.linspace(50, 600, 200)
-            W = np.zeros_like(distances)        # clear weather
-            EXP = np.full_like(distances, 5.0)  # 5 yrs experience
-            grid = np.c_[distances, W, EXP]
-            pgrid = model.predict_proba(grid)
+**Precision (for On-Time=1 alerts)**  
+> Of the loads we **flagged as on-time**, how many actually were?  
+High precision = **few false alarms**. Useful when alerts trigger costly actions.
 
-            plt.plot(distances, pgrid, label="p(On-Time) vs Distance (clear, 5yr exp)")
-            plt.axhline(0.5, linestyle="--", label="0.5 threshold")
-            plt.xlabel("Distance (miles)")
-            plt.ylabel("Predicted Probability of On-Time")
-            plt.title("Logistic Curve in a Logistics Context")
-            plt.legend(loc="best")
-            plt.tight_layout()
-            plt.savefig("logreg_demo.png", dpi=160)
-            print("\n🖼  Saved plot: logreg_demo.png")
-        except Exception as e:
-            print(f"(Plotting skipped due to error: {e})")
-    elif make_plot and not HAS_MPL:
-        print("Matplotlib not available — skipping plot.")
+**Recall (Sensitivity, for On-Time=1)**  
+> Of all the **actual on-time** loads, how many did we **correctly** mark on-time?  
+If you flip the class focus (Late=1), recall then measures how many **late** loads you **caught**.  
+High recall = **few misses**. Useful when missing a problem is very costly.
 
+**F1-Score**  
+> Harmonic mean of precision and recall.  
+Best when classes are **imbalanced** or when you must balance **false alarms vs. misses**.
 
-# -----------------------------
-# Section 3: Historical Tidbits & Trivia
-# -----------------------------
-HISTORY = """
-📜 Historical Tidbits
+**Log-Loss (Negative Log-Likelihood)**  
+> Penalizes **confidently wrong** predictions more than mildly wrong ones.  
+Minimizing log-loss is equivalent to **Maximum Likelihood Estimation (MLE)**.
 
-• The "logistic" function (that S-shaped curve) was introduced by Pierre-François Verhulst in 1838
-  to model population growth that saturates (carrying capacity).
+### Threshold Tuning (Business)
+- Slide the threshold to trade off **precision vs. recall**.
+- Use the **Cost of Errors** box to align with business impact:
+  - **False Positive (FP)**: unnecessary alert / customer worry / ops work.
+  - **False Negative (FN)**: missed late load / service failure / penalties.
+- Choose the threshold that **minimizes expected cost** and meets SLA targets.
+""")
 
-• The "logit" name and practical use in analysis grew in the 20th century; Joseph Berkson popularized
-  the logit usage in 1944, helping bridge statistics and real-world experiments.
-
-• Modern logistic regression relies on maximum likelihood estimation (mid-20th century), and became
-  a mainstay for medical studies, credit scoring, and marketing response modeling long before the
-  "machine learning" term went mainstream.
-
-• Business fun fact: scoring/ranking customers by purchase or churn probability predates many modern
-  recommender systems — logistic regression was (and remains) a workhorse for direct marketing.
-"""
-
-
-# -----------------------------
-# Section 4: Practical Playbook (Business-First)
-# -----------------------------
-PLAYBOOK = """
-🧰 Practical Playbook (Business-First)
-
-1) Define the decision:
-   • What action will you take at different probability bands? (e.g., <60% → reroute)
-
-2) Choose tight, actionable features:
-   • Distance, weather, time window, driver tenure, facility congestion index.
-   • Make them timely and available in production.
-
-3) Make targets clean:
-   • Binary label that's consistent (e.g., on-time = arrived within SLA).
-
-4) Sanity checks:
-   • Outliers? Missing values? Data drift by season or region?
-   • Correlated inputs (e.g., distance and time)? Document and monitor.
-
-5) Ship it with monitoring:
-   • Track calibration (do 0.8 scores happen ~80% of the time?).
-   • Retrain cadence (e.g., monthly/quarterly).
-   • Keep a rules fallback for outages.
-"""
-
-
-# -----------------------------
-# CLI Entrypoint
-# -----------------------------
-def main(argv: List[str]) -> None:
-    want_plot = "--plot" in argv
-    quiet = "--quiet" in argv
-
-    print(PRIMER)
-    print(PENSKE_STORY)
-    print("—" * 72)
-    print("Now a tiny hands-on demo (synthetic data, NumPy only):")
-    train_and_report(quiet=quiet, make_plot=want_plot)
-    print("—" * 72)
-    print(HISTORY)
-    print(PLAYBOOK)
-    print("\nDone. Tip: run with --plot to save a simple visualization to logreg_demo.png\n")
-
-
-if __name__ == "__main__":
-    main(sys.argv[1:])
