@@ -14,6 +14,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 st.title("Logistics ETA Predictor: Transparent Forecasting with Regression Trees")
 
+# -------------------------- Data Origin Blurb ------------------------
 st.header("Data Origin: From Telematics to Prediction Pipeline")
 
 st.markdown("""
@@ -25,8 +26,28 @@ In modern logistics, the raw data for ETA predictions comes from a continuous **
 4.  **Model Consumption:** Our Regression Tree model then consumes these **aggregated and processed features** (e.g., `distance_miles`, `weather_bad`) from the stream's output, allowing it to predict the most accurate, real-time ETA possible based on the very latest operational reality.
 """)
 
+# -------------------------- Architectural Diagram ------------------------
+st.header("Architectural Context: Real-Time ETA Pipeline")
+
+st.markdown("""
+To achieve low-latency ETA predictions, the Regression Tree model sits downstream of a high-volume data architecture. This diagram illustrates the typical flow, processing millions of telematics pings into actionable features for the model.
+
+
+
+#### Key Architectural Components:
+| Component | Function | Role in ETA Prediction |
+| :--- | :--- | :--- |
+| **1. Vehicle Telematics** 🛰️ | Streams raw GPS, engine, and sensor data (the **"fire hose"**). | Source of truth for real-time location and operational status. |
+| **2. Event Bus (Kafka)** 🚌 | Ingests and queues high-volume, continuous data streams reliably. | Decouples the raw data ingestion from complex processing. |
+| **3. Stream Processor (Spark/Flink)** ⚙️ | Performs feature engineering, data cleaning, and aggregation on the fly. | **Transforms raw pings into features** (`distance_miles`, `stops`, `weather_bad`) consumed by the model. |
+| **4. Feature Store** 💾 | Stores the computed, time-series features and serves them consistently. | Provides the model with the correct, low-latency inputs required for inference. |
+| **5. ML Inference Service** 🧠 | Hosts the trained **Regression Tree** model. | Takes the features and outputs the predicted ETA in milliseconds. |
+| **6. Dispatch/Customer App** 📱 | The final user interface. | Consumes the predicted ETA for real-time tracking and decision-making. |
+""", unsafe_allow_html=True)
+
 st.markdown("---")
 
+# -------------------------- Model Goal ------------------------
 st.header("Model Goal: Accurate and Trustworthy Delivery Estimates")
 
 st.markdown("""
@@ -40,7 +61,7 @@ st.sidebar.header("Data Simulation Controls")
 n = st.sidebar.slider("Number of trips (Historical Data)", 500, 20000, 4000, 100)
 noise_sd = st.sidebar.slider("Unobserved Variation (Noise, hours)", 0.0, 3.0, 1.0, 0.1, help="Represents non-modeled factors like unexpected detours or minor loading delays.")
 bad_weather_rate = st.sidebar.slider("Bad Weather Frequency", 0.0, 0.9, 0.30, 0.05)
-stop_rate = st.sidebar.slider("Probability of an Extra Stop (Complexity)", 0.0, 0.8, 0.35, 0.05)
+stop_rate = st.sidebar.slider("Probability of an Extra Stop", 0.0, 0.8, 0.35, 0.05)
 region_count = st.sidebar.slider("Number of Regions", 2, 8, 5, 1)
 seed = st.sidebar.number_input("Random Seed", 0, 9999, 17, 1)
 
@@ -63,12 +84,28 @@ rng = np.random.default_rng(seed)
 # Features
 distance = rng.uniform(40, 700, n)
 weather_bad = rng.binomial(1, bad_weather_rate, n)
-stops = rng.choice([0, 1, 2, 3], size=n, p=[
-    max(0.0, 1 - 3*stop_rate/2),
-    min(1.0, stop_rate),
-    max(0.0, stop_rate/2),
-    max(0.0, stop_rate/4)
+
+# --- CORRECTED CODE FOR STOPS PROBABILITY NORMALIZATION ---
+# Target weights for [0 stops, 1 stop, 2 stops, 3 stops]
+raw_p = np.array([
+    1 - stop_rate,  
+    stop_rate * 0.6, 
+    stop_rate * 0.3, 
+    stop_rate * 0.1 
 ])
+
+raw_p = np.maximum(0.0, raw_p) 
+p_sum = np.sum(raw_p)
+
+if p_sum > 0:
+    probabilities = raw_p / p_sum
+else:
+    probabilities = np.array([0.25, 0.25, 0.25, 0.25])
+
+stops = rng.choice([0, 1, 2, 3], size=n, p=probabilities)
+# --- END CORRECTED CODE ---
+
+
 region = rng.integers(0, region_count, n)
 weekend = rng.binomial(1, 0.3, n)
 
