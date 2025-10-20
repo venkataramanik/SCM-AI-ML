@@ -1,3 +1,10 @@
+# ETA Predictor 2.0 — Gradient Boosting (Clean Rewrite)
+# -----------------------------------------------------
+# Requires:
+#   pip install streamlit numpy==1.24.4 pandas matplotlib==3.8.4
+#   pip install scikit-learn==1.3.2 xgboost==1.6.2 shap==0.40.0
+# -----------------------------------------------------
+
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -5,231 +12,308 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.tree import DecisionTreeRegressor
 
-# Requires: pip install xgboost shap
 import xgboost as xgb
 import shap
 
-# --------------------------------------------------------------------
-# ETA PREDICTOR 2.0 — HIGH-ACCURACY GRADIENT BOOSTING
-# --------------------------------------------------------------------
+# -------------- Page config --------------
+st.set_page_config(
+    page_title="ETA Predictor 2.0 — Gradient Boosting",
+    layout="wide"
+)
 
+# -------------- Title & intro --------------
 st.title("ETA Predictor 2.0: Optimizing Delivery Performance with Gradient Boosting")
 
-# -------------------------- MODEL SHIFT BLURB ------------------------
-st.header("Why We Use Gradient Boosting: Maximizing Prediction Accuracy")
-
-st.markdown("""
-Our prior Decision Tree model provided a solid, auditable forecast, but in competitive logistics, the goal is always to **minimize error**.
-
-**The Business Need:** A smaller prediction error (MAE) means we can offer a **tighter delivery window** to the customer. For example, reducing MAE from 1.0 hour to 0.7 hours is the difference between guaranteeing a 4-hour window and a 3-hour window—a huge **competitive advantage**.
-
-**The Solution (Gradient Boosting):** We transition to **Gradient Boosting (XGBoost)** because it's specifically designed for maximum accuracy. It works by:
-1.  **Learning Sequentially:** It starts with a simple guess, then builds hundreds of small 'expert' decision trees, with each new tree focused entirely on **correcting the errors** made by the previous trees.
-2.  **Trade-off:** We sacrifice the easy-to-read flowchart for **significantly reduced prediction error** and use **SHAP** (Section 2) to maintain trust in every individual prediction.
-""")
-
-st.markdown("---")
-
-# -------------------------- Sidebar controls (Retained) ------------------------
-st.sidebar.header("Data Simulation Controls")
-n = st.sidebar.slider("Number of trips (Historical Data)", 500, 20000, 4000, 100)
-noise_sd = st.sidebar.slider("Unobserved Variation (Noise, hours)", 0.0, 3.0, 1.0, 0.1)
-bad_weather_rate = st.sidebar.slider("Bad Weather Frequency", 0.0, 0.9, 0.30, 0.05)
-stop_rate = st.sidebar.slider("Probability of an Extra Stop", 0.0, 0.8, 0.35, 0.05)
-region_count = st.sidebar.slider("Number of Regions", 2, 8, 5, 1)
-seed = st.sidebar.number_input("Random Seed", 0, 9999, 17, 1)
-
-st.sidebar.header("Operational Impact (Retained)")
-base_handling = st.sidebar.slider("Base Handling Time (hours)", 0.5, 4.0, 1.5, 0.1)
-rate_per_mile = st.sidebar.slider("Travel Rate (hours per mile)", 0.02, 0.12, 0.07, 0.005)
-weather_delay = st.sidebar.slider("Bad Weather Delay (hours penalty)", 0.0, 5.0, 1.2, 0.1)
-stop_delay = st.sidebar.slider("Extra Stop Delay (hours penalty)", 0.0, 3.0, 0.8, 0.1)
-congestion_penalty = st.sidebar.slider("Congestion Region Penalty (hours)", 0.0, 3.0, 0.7, 0.1)
-
-st.sidebar.header("XGBoost Controls")
-n_estimators = st.sidebar.slider("Number of Trees (Power)", 10, 200, 100, 10)
-learning_rate = st.sidebar.slider("Learning Rate (Refinement Speed)", 0.01, 0.3, 0.1, 0.01)
-max_depth = st.sidebar.slider("Max Tree Depth (Simplicity)", 2, 8, 4, 1)
-test_size = 0.25
-
-# ------------------------ Data Generation (Retained) -------------------
-rng = np.random.default_rng(seed)
-
-distance = rng.uniform(40, 700, n)
-weather_bad = rng.binomial(1, bad_weather_rate, n)
-
-raw_p = np.array([1 - stop_rate, stop_rate * 0.6, stop_rate * 0.3, stop_rate * 0.1])
-raw_p = np.maximum(0.0, raw_p) 
-p_sum = np.sum(raw_p)
-probabilities = raw_p / p_sum if p_sum > 0 else np.array([0.25, 0.25, 0.25, 0.25])
-stops = rng.choice([0, 1, 2, 3], size=n, p=probabilities)
-
-region = rng.integers(0, region_count, n)
-weekend = rng.binomial(1, 0.3, n)
-
-region_center = (region_count - 1)
-congested = (region >= max(1, region_center - 1)).astype(int)
-
-eta_true = (
-    base_handling + rate_per_mile * distance + weather_delay * weather_bad + 
-    stop_delay * stops + congestion_penalty * congested + 0.25 * weekend
-)
-eta_true += (weather_bad * (np.maximum(0, distance - 350) / 150.0))
-eta = eta_true + rng.normal(0, noise_sd, n)
-
-df = pd.DataFrame({
-    "distance_miles": distance.round(1),
-    "weather_bad": weather_bad,
-    "stops": stops,
-    "region": region,
-    "weekend": weekend,
-    "eta_hours": eta.round(2)
-})
-
-X = df[["distance_miles", "weather_bad", "stops", "region", "weekend"]].values
-y = df["eta_hours"].values
-feat_names = ["distance_miles", "weather_bad", "stops", "region", "weekend"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=test_size, random_state=seed
-)
-X_test_df = pd.DataFrame(X_test, columns=feat_names)
-
-# --------------------------- Model Fitting --------------------
-# 1. Linear Model (Baseline)
-lin = LinearRegression()
-lin.fit(X_train, y_train)
-y_lin = lin.predict(X_test)
-mae_lin = mean_absolute_error(y_test, y_lin)
-
-# 2. Decision Tree (Baseline from Demo 1)
-from sklearn.tree import DecisionTreeRegressor
-tree = DecisionTreeRegressor(max_depth=6, min_samples_leaf=40, random_state=seed)
-tree.fit(X_train, y_train)
-y_tree = tree.predict(X_test)
-mae_tree = mean_absolute_error(y_test, y_tree)
-
-# 3. Gradient Boosting (New High-Performance Model)
-xgb_model = xgb.XGBRegressor(
-    n_estimators=n_estimators,
-    learning_rate=learning_rate,
-    max_depth=max_depth,
-    random_state=seed,
-    objective='reg:squarederror',
-    booster='gbtree' 
-)
-xgb_model.fit(X_train, y_train)
-y_xgb = xgb_model.predict(X_test)
-mae_xgb = mean_absolute_error(y_test, y_xgb)
-rmse_xgb = np.sqrt(mean_squared_error(y_test, y_xgb))
-
-
-# -------------------------- Performance Comparison --------------------
-st.header("1. Performance Metrics: The Impact of Ensemble Learning")
-
-st.markdown("""
-The table below directly compares the average prediction error (MAE) across the three model types. Notice how the **Gradient Boosting** model significantly cuts the error margin.
-""")
-
-metrics_df = pd.DataFrame({
-    'Model': ['Linear Regression (Simplest)', 'Decision Tree (Auditable)', 'Gradient Boosting (XGBoost)'],
-    'MAE (Avg. Error, hours)': [f'{mae_lin:.2f}', f'{mae_tree:.2f}', f'{mae_xgb:.2f}'],
-    'RMSE (Penalty for Large Errors, hours)': [
-        f'{np.sqrt(mean_squared_error(y_test, y_lin)):.2f}', 
-        f'{np.sqrt(mean_squared_error(y_test, y_tree)):.2f}', 
-        f'{rmse_xgb:.2f}'
-    ]
-}).set_index('Model')
-
-st.dataframe(metrics_df)
-
-st.markdown(f"""
-#### Business Outcome (Non-Technical Blurb) 💡
-The shift to Gradient Boosting delivers a **{((mae_tree - mae_xgb) / mae_tree * 100):.1f}% reduction in average error** compared to our transparent Decision Tree. This translates directly into **tighter service guarantees**, improving customer satisfaction and strengthening our competitive edge.
-""")
-st.markdown("---")
-
-# -------------------------- Feature Contribution (SHAP) --------------------
-st.header("2. Explaining the Black Box: Individual Prediction Contributions (SHAP)")
-
-st.markdown("""
-To ensure we can still audit and trust every high-accuracy forecast, we use **SHAP** values.
-
-#### 💡 The Tug of War Analogy
-Imagine the predicted ETA for a shipment is the result of a **Tug of War** where different features (Distance, Stops, Weather) are the players.
-* The **mid-line** of the rope is the **average ETA** for all shipments.
-* Factors that pull the prediction **higher** (like bad weather or long distance) are scored as **positive contributors (RED)**.
-* Factors that pull the prediction **lower** (like short distance or being on a weekend) are scored as **negative contributors (BLUE)**.
-
-SHAP runs thousands of "simulations" to calculate the **fair contribution** of each feature to the final ETA, giving us feature-by-feature accountability for the final number.
-""")
-
-# Select a single example from the test set 
-sample_index = np.argmax(np.abs(y_test - y_xgb))
-X_sample = X_test[sample_index, :].reshape(1, -1)
-predicted_eta = y_xgb[sample_index]
-
-st.markdown(f"""
-#### Case Study: Shipment Audit
-- **Input Features:** Distance: **{X_sample[0, 0]:.1f} mi**, Stops: **{int(X_sample[0, 2])}**, Weather: **{'Bad' if X_sample[0, 1] else 'Clear'}**
-- **Predicted ETA:** **{predicted_eta:.2f} hours**
-""")
-
-# ----------------------------------------------------------------------
-# FINAL ROBUST FIX: Access native booster via .get_booster()
-# ----------------------------------------------------------------------
-
-try:
-    # 1. Get the native XGBoost Booster object (which has the necessary metadata)
-    bst = xgb_model.get_booster()
-
-    # 2. Initialize SHAP explainer using the native booster object
-    explainer = shap.TreeExplainer(bst, data=X_train) 
-    shap_values = explainer.shap_values(X_sample)
-
-except Exception as e:
-    st.error(f"Failed to initialize SHAP explainer. Error: {e}")
-    st.warning("Please ensure both 'xgboost' and 'shap' packages in your requirements.txt are compatible, stable versions.")
-    # Fallback to prevent app crash if SHAP fails
-    shap_values = [0] * len(feat_names) 
-    explainer = None
-
-
-# Create the Force Plot visualization
-st.subheader("Factor Contribution Breakdown")
-st.caption("Factors pushing the prediction higher (delay) are **RED**; factors pushing it lower (efficiency) are **BLUE**.")
-
-# Generate the plot ONLY if the explainer succeeded
-if explainer:
-    fig_shap = plt.figure()
-    shap.force_plot(
-        explainer.expected_value, 
-        shap_values, 
-        X_sample, 
-        feature_names=feat_names, 
-        matplotlib=True, 
-        show=False
-    )
-    plt.xlabel("Model Output (Predicted ETA in Hours)")
-    st.pyplot(fig_shap)
-else:
-    st.write("Cannot display SHAP plot due to environment error.")
-
-st.markdown("""
-#### Non-Technical Interpretation Blurb 📢
-The SHAP plot is the **immediate audit trail**. For this specific prediction: the long **distance** pushed the ETA significantly to the right (RED), increasing the forecast from the overall average. Conversely, having a low number of **stops** (BLUE) pulled the forecast slightly back down. This tool ensures we can always justify the *why* behind our most accurate forecasts.
-""")
-st.markdown("---")
-
-# -------------------------- Final Business Explanation -------------------
-st.header("3. Key Takeaways: Advanced Forecasting for Business Value")
-
+st.header("Why Gradient Boosting")
 st.markdown(
     """
-1.  **Direct ROI from Accuracy:** The core value of Gradient Boosting is the reduction in prediction error. This improvement directly translates into **cost savings** (fewer service failures) and higher **customer retention** due to more reliable ETAs.
-2.  **Maintaining Trust:** We use SHAP to bridge the gap between model complexity and business accountability. This means we can deploy a high-accuracy 'black box' and still satisfy **auditors and dispatchers** with clear, instant explanations.
-3.  **Scalable Production System:** This model is the final candidate for deployment via a **real-time API endpoint**, taking the live telematics features and delivering a high-confidence prediction in milliseconds.
+A decision tree is simple and auditable, but competitive operations demand the **lowest possible error**.
+Gradient Boosting (XGBoost) builds many small trees **sequentially**, each correcting the prior error, to
+deliver **tighter ETA windows**. We keep trust using **SHAP** to audit individual predictions.
+"""
+)
+
+st.markdown("---")
+
+# -------------- Sidebar controls --------------
+with st.sidebar:
+    st.header("Data Simulation Controls")
+    n = st.slider("Number of trips (historical)", 500, 20000, 4000, 100)
+    noise_sd = st.slider("Unobserved variation (noise, hours)", 0.0, 3.0, 1.0, 0.1)
+    bad_weather_rate = st.slider("Bad weather frequency", 0.0, 0.9, 0.30, 0.05)
+    stop_rate = st.slider("Probability of an extra stop", 0.0, 0.8, 0.35, 0.05)
+    region_count = st.slider("Number of regions", 2, 8, 5, 1)
+    seed = st.number_input("Random seed", 0, 9999, 17, 1)
+
+    st.header("Operational Impact")
+    base_handling = st.slider("Base handling time (hours)", 0.5, 4.0, 1.5, 0.1)
+    rate_per_mile = st.slider("Travel rate (hours per mile)", 0.02, 0.12, 0.07, 0.005)
+    weather_delay = st.slider("Bad weather delay (hours)", 0.0, 5.0, 1.2, 0.1)
+    stop_delay = st.slider("Extra stop delay (hours)", 0.0, 3.0, 0.8, 0.1)
+    congestion_penalty = st.slider("Congestion penalty (hours)", 0.0, 3.0, 0.7, 0.1)
+
+    st.header("XGBoost Controls")
+    n_estimators = st.slider("Number of trees (power)", 10, 200, 100, 10)
+    learning_rate = st.slider("Learning rate (refinement)", 0.01, 0.3, 0.1, 0.01)
+    max_depth = st.slider("Max tree depth (simplicity)", 2, 8, 4, 1)
+
+TEST_SIZE = 0.25
+FEATURES = ["distance_miles", "weather_bad", "stops", "region", "weekend"]
+
+
+# -------------- Helpers --------------
+@st.cache_data(show_spinner=False)
+def simulate_data(
+    n: int,
+    noise_sd: float,
+    bad_weather_rate: float,
+    stop_rate: float,
+    region_count: int,
+    seed: int,
+    base_handling: float,
+    rate_per_mile: float,
+    weather_delay: float,
+    stop_delay: float,
+    congestion_penalty: float
+) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+
+    distance = rng.uniform(40, 700, n)
+    weather_bad = rng.binomial(1, bad_weather_rate, n)
+
+    raw_p = np.array([1 - stop_rate, stop_rate * 0.6, stop_rate * 0.3, stop_rate * 0.1])
+    raw_p = np.maximum(0.0, raw_p)
+    p_sum = raw_p.sum()
+    probabilities = raw_p / p_sum if p_sum > 0 else np.array([0.25, 0.25, 0.25, 0.25])
+
+    stops = rng.choice([0, 1, 2, 3], size=n, p=probabilities)
+    region = rng.integers(0, region_count, n)
+    weekend = rng.binomial(1, 0.3, n)
+
+    # Congestion heuristic: upper-middle and top regions are congested
+    region_center = (region_count - 1)
+    congested = (region >= max(1, region_center - 1)).astype(int)
+
+    # Ground-truth ETA
+    eta_true = (
+        base_handling
+        + rate_per_mile * distance
+        + weather_delay * weather_bad
+        + stop_delay * stops
+        + congestion_penalty * congested
+        + 0.25 * weekend
+    )
+    # Distance-weather interaction: longer trips in bad weather get penalized more
+    eta_true += (weather_bad * (np.maximum(0, distance - 350) / 150.0))
+
+    eta = eta_true + rng.normal(0, noise_sd, n)
+
+    df = pd.DataFrame(
+        {
+            "distance_miles": distance.round(1),
+            "weather_bad": weather_bad,
+            "stops": stops,
+            "region": region,
+            "weekend": weekend,
+            "eta_hours": eta.round(2),
+        }
+    )
+    return df
+
+
+@st.cache_resource(show_spinner=False)
+def train_models(X_train, y_train, seed, n_estimators, learning_rate, max_depth):
+    # Baselines
+    lin = LinearRegression().fit(X_train, y_train)
+    tree = DecisionTreeRegressor(max_depth=6, min_samples_leaf=40, random_state=seed).fit(X_train, y_train)
+
+    # XGBoost
+    xgb_model = xgb.XGBRegressor(
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        max_depth=max_depth,
+        random_state=seed,
+        objective="reg:squarederror",
+        booster="gbtree",
+        n_jobs=-1
+    ).fit(X_train, y_train)
+
+    return lin, tree, xgb_model
+
+
+def evaluate_models(models, X_test, y_test):
+    lin, tree, xgb_model = models
+
+    preds = {
+        "Linear Regression (Simplest)": lin.predict(X_test),
+        "Decision Tree (Auditable)": tree.predict(X_test),
+        "Gradient Boosting (XGBoost)": xgb_model.predict(X_test),
+    }
+
+    rows = []
+    for name, yhat in preds.items():
+        mae = mean_absolute_error(y_test, yhat)
+        rmse = np.sqrt(mean_squared_error(y_test, yhat))
+        rows.append((name, mae, rmse))
+
+    metrics = pd.DataFrame(rows, columns=["Model", "MAE (hours)", "RMSE (hours)"]).set_index("Model")
+    return metrics, preds["Gradient Boosting (XGBoost)"]
+
+
+def pick_case_index(y_true, y_pred):
+    # choose the case with largest absolute error to make SHAP interesting
+    return int(np.argmax(np.abs(y_true - y_pred)))
+
+
+def plot_feature_importance(bst, feature_names):
+    # Gain-based importance from XGBoost booster
+    try:
+        fmap = bst.get_score(importance_type="gain")
+        imp_df = pd.DataFrame(
+            [(feature_names[int(k.replace("f", ""))], v) for k, v in fmap.items()],
+            columns=["Feature", "Gain"]
+        ).sort_values("Gain", ascending=False)
+        fig = plt.figure()
+        plt.barh(imp_df["Feature"], imp_df["Gain"])
+        plt.gca().invert_yaxis()
+        plt.title("XGBoost Feature Importance (Gain)")
+        plt.xlabel("Gain")
+        return fig
+    except Exception:
+        return None
+
+
+# -------------- Data --------------
+df = simulate_data(
+    n=n,
+    noise_sd=noise_sd,
+    bad_weather_rate=bad_weather_rate,
+    stop_rate=stop_rate,
+    region_count=region_count,
+    seed=seed,
+    base_handling=base_handling,
+    rate_per_mile=rate_per_mile,
+    weather_delay=weather_delay,
+    stop_delay=stop_delay,
+    congestion_penalty=congestion_penalty
+)
+
+X = df[FEATURES].values
+y = df["eta_hours"].values
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=seed)
+X_test_df = pd.DataFrame(X_test, columns=FEATURES)
+
+# -------------- Train & evaluate --------------
+models = train_models(X_train, y_train, seed, n_estimators, learning_rate, max_depth)
+metrics, y_xgb = evaluate_models(models, X_test, y_test)
+lin, tree, xgb_model = models
+
+# -------------- Show metrics --------------
+st.header("1. Performance Metrics")
+st.markdown("Gradient Boosting typically reduces error vs. the baselines, enabling tighter ETA windows.")
+st.dataframe(metrics.style.format({"MAE (hours)": "{:.2f}", "RMSE (hours)": "{:.2f}"}))
+
+mae_tree = metrics.loc["Decision Tree (Auditable)", "MAE (hours)"]
+mae_xgb = metrics.loc["Gradient Boosting (XGBoost)", "MAE (hours)"]
+improve_pct = ((mae_tree - mae_xgb) / mae_tree * 100) if mae_tree > 0 else 0.0
+
+st.markdown(
+    f"**Business Outcome** — Estimated **{improve_pct:.1f}% reduction** in average error versus the auditable Decision Tree."
+)
+st.markdown("---")
+
+# -------------- Feature importance (model-level) --------------
+st.subheader("Model-Level Drivers (XGBoost Feature Importance)")
+bst = xgb_model.get_booster()
+fig_imp = plot_feature_importance(bst, FEATURES)
+if fig_imp:
+    st.pyplot(fig_imp, clear_figure=True)
+else:
+    st.info("Feature importance not available in this environment.")
+
+# -------------- SHAP (case-level explanation) --------------
+st.header("2. Case-Level Explanation (SHAP)")
+
+case_idx = pick_case_index(y_test, y_xgb)
+X_sample = X_test[case_idx, :].reshape(1, -1)
+predicted_eta = y_xgb[case_idx]
+
+st.markdown(
+    f"""
+**Shipment audit example**  
+- Distance: **{X_sample[0, 0]:.1f} mi**  
+- Stops: **{int(X_sample[0, 2])}**  
+- Weather: **{'Bad' if int(X_sample[0, 1]) else 'Clear'}**  
+- Predicted ETA: **{predicted_eta:.2f} hours**
+"""
+)
+
+st.caption("We use SHAP to attribute how each input pushed ETA up or down for this one prediction.")
+
+# Robust SHAP via native booster (fixes 'save_raw' / 'base_score' issues in older xgboost+shap combos)
+try:
+    booster = xgb_model.get_booster()
+    explainer = shap.TreeExplainer(booster, data=X_train)
+    shap_vals = explainer.shap_values(X_sample)  # shape (1, n_features)
+    expected_value = explainer.expected_value
+
+    # Force plot (matplotlib) — guard in case of backend quirks
+    try:
+        fig = plt.figure()
+        shap.force_plot(
+            base_value=expected_value,
+            shap_values=shap_vals,
+            features=X_sample,
+            feature_names=FEATURES,
+            matplotlib=True,
+            show=False
+        )
+        plt.xlabel("Model output (Predicted ETA in hours)")
+        st.pyplot(fig, clear_figure=True)
+    except Exception:
+        # Fallback: simple contribution bar chart
+        contrib = pd.Series(shap_vals.flatten(), index=FEATURES).sort_values()
+        fig2 = plt.figure()
+        plt.barh(contrib.index, contrib.values)
+        plt.title("SHAP Contributions (Fallback)")
+        plt.xlabel("Contribution to ETA (hours)")
+        st.pyplot(fig2, clear_figure=True)
+
+    st.markdown(
+        """
+- Positive bars push ETA **higher** (delay factors).  
+- Negative bars pull ETA **lower** (efficiency factors).  
+This provides an immediate audit trail for the specific forecast.
+        """
+    )
+except Exception as e:
+    st.error(f"SHAP explanation failed: {e}")
+    st.warning("Check versions: numpy==1.24.4, xgboost==1.6.2, shap==0.40.0")
+
+st.markdown("---")
+
+# -------------- Data preview & download --------------
+with st.expander("Sample of training data"):
+    st.dataframe(df.head(20))
+
+csv = df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download simulated dataset as CSV",
+    data=csv,
+    file_name="eta_simulated_data.csv",
+    mime="text/csv"
+)
+
+# -------------- Final business summary --------------
+st.header("3. Key Takeaways")
+st.markdown(
+    """
+1. **Accuracy → Business Value**: Lower MAE means tighter delivery windows and fewer service misses.  
+2. **Trust Preserved**: SHAP explains individual predictions, satisfying auditor and dispatcher needs.  
+3. **Ready for Production**: This model can be deployed behind a real-time API and scored in milliseconds.
 """
 )
