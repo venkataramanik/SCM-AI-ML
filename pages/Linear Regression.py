@@ -20,7 +20,7 @@ Linear Regression gives a first-order view. It estimates:
 - a baseline handling time (loading/unloading, paperwork),
 - an incremental travel rate per mile.
 
-This is the baseline model I build first before moving to more complex, non-linear approaches.
+
 """)
 
 # -------------------------- Sidebar controls ------------------------
