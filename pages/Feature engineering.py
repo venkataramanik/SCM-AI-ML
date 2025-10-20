@@ -56,7 +56,7 @@ st.subheader("A. Cyclic Features: Solving the Time-of-Day Problem")
 st.markdown("""
 **Business Context:** Rush hour and overnight efficiency are cyclical. Standard numbering (0, 1, ..., 23) treats 11 PM as far from 1 AM, which is misleading for traffic.
 
-**Transformation:** I convert the single hour number into **two new features (Sine and Cosine)**, mapping the time onto a circle. This correctly models the continuity of time, allowing our ETA model to anticipate cyclical congestion accurately.
+**Transformation:** Convert the single hour number into **two new features (Sine and Cosine)**, mapping the time onto a circle. This correctly models the continuity of time, allowing our ETA model to anticipate cyclical congestion accurately.
 """)
 HOURS_IN_CYCLE = 24
 logistics_df['hour_sin'] = np.sin(2 * np.pi * logistics_df['trip_start_hour'] / HOURS_IN_CYCLE)
@@ -70,7 +70,7 @@ st.subheader("B. Interaction Features: Scaling Operational Risk")
 st.markdown("""
 **Business Context:** The penalty for a delay isn't fixed; it **amplifies** under certain conditions. Bad weather causes a minimal delay on a short trip but a massive delay on a long trip.
 
-**Transformation:** I create a new feature by **multiplying** the distance by the weather's severity score. This explicitly teaches the model to apply a much larger penalty when both high distance and bad weather are present, improving **conditional risk assessment**.
+**Transformation:** Create a new feature by **multiplying** the distance by the weather's severity score. This explicitly teaches the model to apply a much larger penalty when both high distance and bad weather are present, improving **conditional risk assessment**.
 """)
 severity_map = {'Clear': 1, 'Rain': 2, 'Snow': 3, 'Heavy Fog': 4}
 logistics_df['weather_severity'] = logistics_df['weather_condition'].map(severity_map)
@@ -84,7 +84,7 @@ st.subheader("C. Binning: Creating Clear Operational Categories")
 st.markdown("""
 **Business Context:** Operations are often categorized (e.g., local vs. long haul). Instead of modeling the unique pattern for every single mile, it's more robust to model the delay based on the **operational category**.
 
-**Transformation:** I convert the continuous `distance_miles` into discrete, defined categories (`Local_Haul`, `Short_Haul`, etc.). This reduces noise and helps the predictive model find stable patterns for each haul type.
+**Transformation:** Convert the continuous `distance_miles` into discrete, defined categories (`Local_Haul`, `Short_Haul`, etc.). This reduces noise and helps the predictive model find stable patterns for each haul type.
 """)
 bins = [0, 300, 800, 1200, np.inf]
 labels = ['Local_Haul', 'Short_Haul', 'Medium_Haul', 'Long_Haul']
@@ -103,7 +103,7 @@ st.subheader("D. One-Hot Encoding (OHE): Quantifying Qualitative Data")
 st.markdown("""
 **Business Context:** The model needs numbers; it cannot process the text 'Snow'.
 
-**Transformation:** I convert the text labels into **separate binary (0 or 1) columns**. This assigns a clear, quantifiable dimension to each weather type, allowing the model to learn the specific delay risk (the coefficient) associated with 'Snow'.
+**Transformation:** Convert the text labels into **separate binary (0 or 1) columns**. This assigns a clear, quantifiable dimension to each weather type, allowing the model to learn the specific delay risk (the coefficient) associated with 'Snow'.
 """)
 weather_dummies = pd.get_dummies(logistics_df['weather_condition'], prefix='weather')
 logistics_df = pd.concat([logistics_df, weather_dummies], axis=1)
@@ -116,7 +116,7 @@ st.subheader("E. Standardization: Ensuring Fair Feature Influence")
 st.markdown("""
 **Business Context:** Raw features have wildly different scales: `Distance` (up to 1,500) and `Stops` (up to 7). The model might mistakenly assume Distance is 1,000 times more important just because its number is bigger.
 
-**Transformation:** I scale both features to have a **mean of 0 and a standard deviation of 1**. This ensures that the predictive power of **Stops** has a fair and equal influence on the ETA calculation as **Distance**, regardless of their raw numerical values.
+**Transformation:** Scale both features to have a **mean of 0 and a standard deviation of 1**. This ensures that the predictive power of **Stops** has a fair and equal influence on the ETA calculation as **Distance**, regardless of their raw numerical values.
 """)
 scaler = StandardScaler()
 cols_to_scale = ['distance_miles', 'stops_count']
@@ -130,7 +130,7 @@ st.subheader("F. Frequency Encoding: Handling Rare Operational Segments")
 st.markdown("""
 **Business Context:** We have many delivery regions, but several are very rare (high **cardinality**). Creating an OHE column for every rare region leads to a chaotic, unstable model.
 
-**Transformation:** I replace the region name with the **count of how often that region appears**. This helps the model implicitly learn that low-frequency regions carry a higher risk of ETA variance due to non-standard operations or remote locations, avoiding the problem of rare categories.
+**Transformation:** Replace the region name with the **count of how often that region appears**. This helps the model implicitly learn that low-frequency regions carry a higher risk of ETA variance due to non-standard operations or remote locations, avoiding the problem of rare categories.
 """)
 region_counts = logistics_df['delivery_region'].value_counts().to_dict()
 logistics_df['region_frequency'] = logistics_df['delivery_region'].map(region_counts)
