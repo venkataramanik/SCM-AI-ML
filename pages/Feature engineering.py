@@ -28,7 +28,6 @@ logistics_df = pd.DataFrame({
     # Delivery region: High Cardinality (15 total regions for Frequency Encoding demo)
     'delivery_region': np.random.choice(
         ['East', 'West', 'Central', 'South', 'North'] + [f'Other_{i}' for i in range(10)], N, 
-        # Pass the normalized array here
         p=p_normalized
     ),
     # Weather: Low Cardinality
@@ -102,14 +101,17 @@ st.write("---")
 # D. One-Hot Encoding (weather_condition)
 st.subheader("D. One-Hot Encoding (OHE): Quantifying Qualitative Data")
 st.markdown("""
-**Business Context:** The predictive model needs numerical inputs; it cannot process text labels like 'Snow'.
+**Business Context:** The predictive model needs numerical inputs; it cannot process the text labels 'Snow'.
 
 **Transformation:** The text labels are converted into **separate binary (0 or 1) columns**. This assigns a clear, quantifiable dimension to each weather type, allowing the model to learn the specific delay risk associated with 'Snow'.
 """)
-weather_dummies = pd.get_dummies(df['weather_condition'], prefix='weather')
-df = pd.concat([df, weather_dummies], axis=1) # The only concat that should happen on the main df
+# --- STABLE FIX: Create a temporary display DataFrame for OHE ---
+df_ohe_display = pd.get_dummies(df[['weather_condition']], prefix='weather')
+# Concatenate the original weather column with the new OHE columns just for display
+df_ohe_final = pd.concat([df[['weather_condition']].reset_index(drop=True), df_ohe_display.reset_index(drop=True)], axis=1)
 
-st.dataframe(df[['weather_condition'] + [col for col in df.columns if 'weather_' in col]].head(), use_container_width=True)
+# Note: The main DataFrame 'df' is NOT altered here to prevent column duplication on rerun.
+st.dataframe(df_ohe_final.head(), use_container_width=True) 
 st.write("---")
 
 
