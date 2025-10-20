@@ -15,35 +15,15 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 st.title("Logistics ETA Predictor: Transparent Forecasting with Regression Trees")
 
 # -------------------------- Data Origin Blurb ------------------------
-st.header("Data Origin: From Telematics to Prediction Pipeline")
+st.header("Data Origin: From Telematics Fire Hose")
 
 st.markdown("""
 In modern logistics, the raw data for ETA predictions comes from a continuous **"fire hose"** of real-time signals.
 
 1.  **The Source (Telematics):** Every vehicle is equipped with a telematics unit that constantly streams **GPS coordinates, speed, accelerometer readings,** and other sensor data.
-2.  **The Stream (Event Bus):** This raw, high-volume data is immediately pushed into a high-throughput, low-latency system like **Apache Kafka** or a similar **event bus/stream processing platform**. This system acts as a central nervous system, handling millions of messages per second.
-3.  **The "Fire Hose" Processing:** This streaming architecture creates the "fire hose"—a massive, real-time flow of data. Before use, the raw pings must be **cleaned, filtered, and aggregated**. For instance, 1,000 GPS pings are converted into a single "Stop Event" or a "Weather Condition" feature.
-4.  **Model Consumption:** Our Regression Tree model then consumes these **aggregated and processed features** (e.g., `distance_miles`, `weather_bad`) from the stream's output, allowing it to predict the most accurate, real-time ETA possible based on the very latest operational reality.
+2.  **The Stream (Event Bus):** This raw, high-volume data is immediately pushed into a high-throughput, low-latency system like **Apache Kafka** or a similar **event bus/stream processing platform**.
+3.  **The Processing:** This data is then **cleaned, filtered, and aggregated** in real-time. For instance, thousands of raw pings are transformed into the aggregated operational features (like `stops` and `weather_bad`) consumed by our model.
 """)
-
-# -------------------------- Architectural Diagram ------------------------
-st.header("Architectural Context: Real-Time ETA Pipeline")
-
-st.markdown("""
-To achieve low-latency ETA predictions, the Regression Tree model sits downstream of a high-volume data architecture. This diagram illustrates the typical flow, processing millions of telematics pings into actionable features for the model.
-
-
-
-#### Key Architectural Components:
-| Component | Function | Role in ETA Prediction |
-| :--- | :--- | :--- |
-| **1. Vehicle Telematics** 🛰️ | Streams raw GPS, engine, and sensor data (the **"fire hose"**). | Source of truth for real-time location and operational status. |
-| **2. Event Bus (Kafka)** 🚌 | Ingests and queues high-volume, continuous data streams reliably. | Decouples the raw data ingestion from complex processing. |
-| **3. Stream Processor (Spark/Flink)** ⚙️ | Performs feature engineering, data cleaning, and aggregation on the fly. | **Transforms raw pings into features** (`distance_miles`, `stops`, `weather_bad`) consumed by the model. |
-| **4. Feature Store** 💾 | Stores the computed, time-series features and serves them consistently. | Provides the model with the correct, low-latency inputs required for inference. |
-| **5. ML Inference Service** 🧠 | Hosts the trained **Regression Tree** model. | Takes the features and outputs the predicted ETA in milliseconds. |
-| **6. Dispatch/Customer App** 📱 | The final user interface. | Consumes the predicted ETA for real-time tracking and decision-making. |
-""", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -85,8 +65,7 @@ rng = np.random.default_rng(seed)
 distance = rng.uniform(40, 700, n)
 weather_bad = rng.binomial(1, bad_weather_rate, n)
 
-# --- CORRECTED CODE FOR STOPS PROBABILITY NORMALIZATION ---
-# Target weights for [0 stops, 1 stop, 2 stops, 3 stops]
+# CORRECTED: Normalized probability calculation for 'stops'
 raw_p = np.array([
     1 - stop_rate,  
     stop_rate * 0.6, 
@@ -103,7 +82,7 @@ else:
     probabilities = np.array([0.25, 0.25, 0.25, 0.25])
 
 stops = rng.choice([0, 1, 2, 3], size=n, p=probabilities)
-# --- END CORRECTED CODE ---
+# END CORRECTION
 
 
 region = rng.integers(0, region_count, n)
@@ -157,8 +136,11 @@ tree = DecisionTreeRegressor(
 )
 tree.fit(X_train, y_train)
 y_pred = tree.predict(X_test)
+
 mae = mean_absolute_error(y_test, y_pred)
-rmse = mean_squared_error(y_test, y_pred, squared=False)
+# FIXED: Calculate RMSE manually for compatibility with older sklearn versions
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse) 
 r2 = r2_score(y_test, y_pred)
 
 # ------------------------ Linear baseline (optional) ----------------
@@ -166,8 +148,11 @@ if show_linear_baseline:
     lin = LinearRegression()
     lin.fit(X_train, y_train)
     y_lin = lin.predict(X_test)
+    
     mae_lin = mean_absolute_error(y_test, y_lin)
-    rmse_lin = mean_squared_error(y_test, y_lin, squared=False)
+    # FIXED: Calculate RMSE manually for compatibility with older sklearn versions
+    mse_lin = mean_squared_error(y_test, y_lin)
+    rmse_lin = np.sqrt(mse_lin)
     r2_lin = r2_score(y_test, y_lin)
 
 # -------------------------- Metrics & Comparison --------------------
