@@ -4,11 +4,20 @@ from sklearn.preprocessing import StandardScaler
 import streamlit as st
 
 st.set_page_config(layout="wide")
-st.title("Data Transformation for Predictive Logistics: Feature Engineering Demo")
+st.title("Data Transformation for Predictive Logistics: Feature Engineering ")
 
-# --- 1. Synthesize Realistic Logistics Data (FIXED) ---
+# --- 1. Synthesize Realistic Logistics Data (FIXED FOR PRECISION) ---
 np.random.seed(42)
 N = 1000
+
+# Define the raw probabilities
+raw_probs = np.array([0.25, 0.25, 0.2, 0.1, 0.1, 
+                      0.02, 0.02, 0.01, 0.01, 0.01, 
+                      0.01, 0.01, 0.01, 0.01, 0.01])
+
+# Corrective Step: Normalize the array to ensure the sum is exactly 1.0
+p_normalized = raw_probs / raw_probs.sum()
+
 
 # Generating data that represents common logistics scenarios
 logistics_df = pd.DataFrame({
@@ -19,14 +28,16 @@ logistics_df = pd.DataFrame({
     # Delivery region: High Cardinality (15 total regions for Frequency Encoding demo)
     'delivery_region': np.random.choice(
         ['East', 'West', 'Central', 'South', 'North'] + [f'Other_{i}' for i in range(10)], N, 
-        # Corrected probability list (15 elements)
-        p=[0.25, 0.25, 0.2, 0.1, 0.1, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+        # Pass the normalized array here
+        p=p_normalized
     ),
     # Weather: Low Cardinality
     'weather_condition': np.random.choice(['Clear', 'Rain', 'Snow', 'Heavy Fog'], N, p=[0.7, 0.15, 0.1, 0.05]),
     # Time Data (Hour of Day)
     'trip_start_hour': np.random.randint(0, 24, N),
 })
+
+# --- The rest of the script continues below, using the logistics_df ---
 
 st.header("Initial Data Overview: Raw Inputs")
 st.markdown("""
