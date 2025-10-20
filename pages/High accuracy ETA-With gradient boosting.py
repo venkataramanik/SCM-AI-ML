@@ -118,7 +118,6 @@ xgb_model = xgb.XGBRegressor(
     max_depth=max_depth,
     random_state=seed,
     objective='reg:squarederror',
-    # Fix for SHAP compatibility
     booster='gbtree' 
 )
 xgb_model.fit(X_train, y_train)
@@ -179,24 +178,20 @@ st.markdown(f"""
 """)
 
 # ----------------------------------------------------------------------
-# FINAL ROBUST FIX: Serialize/Deserialize model to ensure SHAP compatibility
+# FINAL ROBUST FIX: Access native booster via .get_booster()
 # ----------------------------------------------------------------------
 
 try:
-    # 1. Serialize the model to a temporary buffer
-    bst_bytes = xgb_model.save_raw()
+    # 1. Get the native XGBoost Booster object (which has the necessary metadata)
+    bst = xgb_model.get_booster()
 
-    # 2. Load the model using XGBoost's native Booster API
-    bst = xgb.Booster()
-    bst.load_buffer(bst_bytes)
-
-    # 3. Initialize SHAP explainer using the newly loaded booster object
+    # 2. Initialize SHAP explainer using the native booster object
     explainer = shap.TreeExplainer(bst, data=X_train) 
     shap_values = explainer.shap_values(X_sample)
 
 except Exception as e:
     st.error(f"Failed to initialize SHAP explainer. Error: {e}")
-    st.warning("A deep-seated version conflict between SHAP and XGBoost is likely. Ensure both packages are the latest stable versions in your requirements.txt.")
+    st.warning("Please ensure both 'xgboost' and 'shap' packages in your requirements.txt are compatible, stable versions.")
     # Fallback to prevent app crash if SHAP fails
     shap_values = [0] * len(feat_names) 
     explainer = None
