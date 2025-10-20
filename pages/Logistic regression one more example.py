@@ -14,10 +14,10 @@ st.set_page_config(
 )
 
 # --- 2. HEADER AND NON-TECHNICAL EXPLANATION ---
-st.title("💡 The Power of Probability: Predicting On-Time Delivery with Logistic Regression")
+st.title("The Power of Probability: Predicting On-Time Delivery with Logistic Regression")
 st.markdown("---")
 
-st.header("What is Logistic Regression for Us?")
+st.header("What is Logistic Regression?")
 st.markdown(
     """
     Think of Logistic Regression not as guessing the future, but as calculating the **likelihood** (probability) of a specific event—in our case, an **On-Time Delivery**.
@@ -289,5 +289,3 @@ st.markdown(
     """
 )
 
-st.markdown("---")
-st.success("This model is simple, powerful, and highly interpretable—perfect for driving data-informed decisions in logistics and transportation. Thank you.")
