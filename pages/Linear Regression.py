@@ -1,13 +1,4 @@
-Here’s the complete, interview-ready Streamlit app rebuilt with:
 
-* clear business framing,
-* interactive data + model controls,
-* a plain-English explanation of error and the two fitting methods,
-* and a closing perspective section with **regression to the mean (Galton)** and a **Taleb/Mandelbrot** style real-world note.
-
-You can save this as `linear_regression_business_demo.py` and run/deploy.
-
-```python
 import streamlit as st
 import numpy as np
 import pandas as pd
