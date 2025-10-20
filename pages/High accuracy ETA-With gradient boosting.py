@@ -12,7 +12,7 @@ import xgboost as xgb
 import shap
 
 # --- STREAMLIT CONFIG (Avoids warnings related to plotting) ---
-# REMOVED: st.set_option('deprecation.showPyplotGlobalUse', False)
+# Removed deprecated st.set_option for PyPlot warning fix.
 
 # --------------------------------------------------------------------
 # ETA PREDICTOR 2.0 — HIGH-ACCURACY GRADIENT BOOSTING
@@ -120,7 +120,9 @@ xgb_model = xgb.XGBRegressor(
     learning_rate=learning_rate,
     max_depth=max_depth,
     random_state=seed,
-    objective='reg:squarederror'
+    objective='reg:squarederror',
+    # FIX for SHAP KeyError: 'base_score'
+    booster='gbtree' 
 )
 xgb_model.fit(X_train, y_train)
 y_xgb = xgb_model.predict(X_test)
@@ -164,7 +166,6 @@ To ensure we can still audit and trust every forecast, we use **SHAP** values. T
 sample_index = np.argmax(np.abs(y_test - y_xgb)) # Find a trip with a large residual for drama
 X_sample = X_test[sample_index, :].reshape(1, -1)
 predicted_eta = y_xgb[sample_index]
-# actual_eta = y_test[sample_index] # Not strictly needed for SHAP, but good context
 
 st.markdown(f"""
 #### Case Study: Shipment Audit
