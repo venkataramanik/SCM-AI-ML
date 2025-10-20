@@ -12,7 +12,7 @@ import xgboost as xgb
 import shap
 
 # --- STREAMLIT CONFIG (Avoids warnings related to plotting) ---
-st.set_option('deprecation.showPyplotGlobalUse', False)
+# REMOVED: st.set_option('deprecation.showPyplotGlobalUse', False)
 
 # --------------------------------------------------------------------
 # ETA PREDICTOR 2.0 — HIGH-ACCURACY GRADIENT BOOSTING
@@ -164,17 +164,16 @@ To ensure we can still audit and trust every forecast, we use **SHAP** values. T
 sample_index = np.argmax(np.abs(y_test - y_xgb)) # Find a trip with a large residual for drama
 X_sample = X_test[sample_index, :].reshape(1, -1)
 predicted_eta = y_xgb[sample_index]
-actual_eta = y_test[sample_index]
+# actual_eta = y_test[sample_index] # Not strictly needed for SHAP, but good context
 
 st.markdown(f"""
-#### Case Study: Shipment #{sample_index} Audit
+#### Case Study: Shipment Audit
 - **Input Features:** Distance: **{X_sample[0, 0]:.1f} mi**, Stops: **{int(X_sample[0, 2])}**, Weather: **{'Bad' if X_sample[0, 1] else 'Clear'}**
 - **Predicted ETA:** **{predicted_eta:.2f} hours**
 """)
 
 # Calculate SHAP values for the specific sample
 explainer = shap.TreeExplainer(xgb_model)
-# SHAP requires NumPy arrays or pandas DataFrames, use X_sample (NumPy)
 shap_values = explainer.shap_values(X_sample)
 
 # Create the Force Plot visualization
