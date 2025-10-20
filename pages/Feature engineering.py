@@ -4,9 +4,9 @@ from sklearn.preprocessing import StandardScaler
 import streamlit as st
 
 st.set_page_config(layout="wide")
-st.title("Data Transformation for Predictive Logistics: Feature Engineering ")
+st.title("Data Transformation for Predictive Logistics: Feature Engineering Demo")
 
-# --- 1. Synthesize Realistic Logistics Data (FIXED FOR PRECISION) ---
+# --- 1. Synthesize Realistic Logistics Data ---
 np.random.seed(42)
 N = 1000
 
@@ -37,13 +37,14 @@ logistics_df = pd.DataFrame({
     'trip_start_hour': np.random.randint(0, 24, N),
 })
 
-# --- The rest of the script continues below, using the logistics_df ---
+# --- Create a master copy for all transformations to ensure stability ---
+df = logistics_df.copy()
 
 st.header("Initial Data Overview: Raw Inputs")
 st.markdown("""
-This table shows the raw data received directly from our fleet's GPS and sensor logs. While simple, this data needs significant mathematical **transformation** (Feature Engineering) before it can be used by a predictive model to accurately calculate delivery times.
+This table shows the raw data received directly from the fleet's GPS and sensor logs. This data requires significant mathematical **transformation** (Feature Engineering) before it can be used by a predictive model to accurately calculate delivery times.
 """)
-st.dataframe(logistics_df.head(), use_container_width=True)
+st.dataframe(df.head(), use_container_width=True)
 
 st.markdown("---")
 
@@ -54,85 +55,87 @@ st.header("Core Data Transformation Techniques (Feature Engineering)")
 # A. Cyclic Features (trip_start_hour)
 st.subheader("A. Cyclic Features: Solving the Time-of-Day Problem")
 st.markdown("""
-**Business Context:** Rush hour and overnight efficiency are cyclical. Standard numbering (0, 1, ..., 23) treats 11 PM as far from 1 AM, which is misleading for traffic.
+**Business Context:** Rush hour and overnight efficiency are cyclical. Standard numbering (0-23) is misleading because the end point (23) is conceptually next to the start point (0).
 
-**Transformation:** Convert the single hour number into **two new features (Sine and Cosine)**, mapping the time onto a circle. This correctly models the continuity of time, allowing our ETA model to anticipate cyclical congestion accurately.
+**Transformation:** The single hour number is converted into **two new features (Sine and Cosine)**, mapping the time onto a circle. This correctly models the continuity of time, allowing the ETA model to anticipate cyclical congestion accurately.
 """)
 HOURS_IN_CYCLE = 24
-logistics_df['hour_sin'] = np.sin(2 * np.pi * logistics_df['trip_start_hour'] / HOURS_IN_CYCLE)
-logistics_df['hour_cos'] = np.cos(2 * np.pi * logistics_df['trip_start_hour'] / HOURS_IN_CYCLE)
-st.dataframe(logistics_df[['trip_start_hour', 'hour_sin', 'hour_cos']].head(), use_container_width=True)
+df['hour_sin'] = np.sin(2 * np.pi * df['trip_start_hour'] / HOURS_IN_CYCLE)
+df['hour_cos'] = np.cos(2 * np.pi * df['trip_start_hour'] / HOURS_IN_CYCLE)
+st.dataframe(df[['trip_start_hour', 'hour_sin', 'hour_cos']].head(), use_container_width=True)
 st.write("---")
 
 
 # B. Interaction Features (distance_miles * weather_condition)
 st.subheader("B. Interaction Features: Scaling Operational Risk")
 st.markdown("""
-**Business Context:** The penalty for a delay isn't fixed; it **amplifies** under certain conditions. Bad weather causes a minimal delay on a short trip but a massive delay on a long trip.
+**Business Context:** The penalty for a delay is not fixed; it **amplifies** under certain conditions. Bad weather causes a minimal delay on a short trip but a massive delay on a long trip.
 
-**Transformation:** Create a new feature by **multiplying** the distance by the weather's severity score. This explicitly teaches the model to apply a much larger penalty when both high distance and bad weather are present, improving **conditional risk assessment**.
+**Transformation:** A new feature is created by **multiplying** the distance by the weather's severity score. This explicitly teaches the model to apply a much larger penalty when both high distance and bad weather are present, improving **conditional risk assessment**.
 """)
 severity_map = {'Clear': 1, 'Rain': 2, 'Snow': 3, 'Heavy Fog': 4}
-logistics_df['weather_severity'] = logistics_df['weather_condition'].map(severity_map)
-logistics_df['risk_interaction'] = logistics_df['distance_miles'] * logistics_df['weather_severity']
-st.dataframe(logistics_df[['distance_miles', 'weather_condition', 'risk_interaction']].head(), use_container_width=True)
+df['weather_severity'] = df['weather_condition'].map(severity_map)
+df['risk_interaction'] = df['distance_miles'] * df['weather_severity']
+st.dataframe(df[['distance_miles', 'weather_condition', 'risk_interaction']].head(), use_container_width=True)
 st.write("---")
 
 
 # C. Binning / Discretization (distance_miles)
 st.subheader("C. Binning: Creating Clear Operational Categories")
 st.markdown("""
-**Business Context:** Operations are often categorized (e.g., local vs. long haul). Instead of modeling the unique pattern for every single mile, it's more robust to model the delay based on the **operational category**.
+**Business Context:** Operations are often categorized (e.g., local vs. long haul). Modeling the delay based on the **operational category** is more robust than relying on the pattern for every single mile.
 
-**Transformation:** Convert the continuous `distance_miles` into discrete, defined categories (`Local_Haul`, `Short_Haul`, etc.). This reduces noise and helps the predictive model find stable patterns for each haul type.
+**Transformation:** The continuous `distance_miles` is converted into discrete, defined categories (`Local_Haul`, `Short_Haul`, etc.). This reduces noise and helps the predictive model find stable patterns for each haul type.
 """)
 bins = [0, 300, 800, 1200, np.inf]
 labels = ['Local_Haul', 'Short_Haul', 'Medium_Haul', 'Long_Haul']
-logistics_df['haul_category'] = pd.cut(
-    logistics_df['distance_miles'], 
+df['haul_category'] = pd.cut(
+    df['distance_miles'], 
     bins=bins, 
     labels=labels, 
     right=False
 )
-st.dataframe(logistics_df[['distance_miles', 'haul_category']].head(), use_container_width=True)
+st.dataframe(df[['distance_miles', 'haul_category']].head(), use_container_width=True)
 st.write("---")
 
 
 # D. One-Hot Encoding (weather_condition)
 st.subheader("D. One-Hot Encoding (OHE): Quantifying Qualitative Data")
 st.markdown("""
-**Business Context:** The model needs numbers; it cannot process the text 'Snow'.
+**Business Context:** The predictive model needs numerical inputs; it cannot process text labels like 'Snow'.
 
-**Transformation:** Convert the text labels into **separate binary (0 or 1) columns**. This assigns a clear, quantifiable dimension to each weather type, allowing the model to learn the specific delay risk (the coefficient) associated with 'Snow'.
+**Transformation:** The text labels are converted into **separate binary (0 or 1) columns**. This assigns a clear, quantifiable dimension to each weather type, allowing the model to learn the specific delay risk associated with 'Snow'.
 """)
-weather_dummies = pd.get_dummies(logistics_df['weather_condition'], prefix='weather')
-logistics_df = pd.concat([logistics_df, weather_dummies], axis=1)
-st.dataframe(logistics_df[['weather_condition'] + [col for col in logistics_df.columns if 'weather_' in col]].head(), use_container_width=True)
+weather_dummies = pd.get_dummies(df['weather_condition'], prefix='weather')
+df = pd.concat([df, weather_dummies], axis=1) # The only concat that should happen on the main df
+
+st.dataframe(df[['weather_condition'] + [col for col in df.columns if 'weather_' in col]].head(), use_container_width=True)
 st.write("---")
 
 
 # E. Standardization (stops_count and distance_miles)
 st.subheader("E. Standardization: Ensuring Fair Feature Influence")
 st.markdown("""
-**Business Context:** Raw features have wildly different scales: `Distance` (up to 1,500) and `Stops` (up to 7). The model might mistakenly assume Distance is 1,000 times more important just because its number is bigger.
+**Business Context:** Raw features have wildly different scales: `Distance` (up to 1,500) and `Stops` (up to 7). Unscaled, the model might mistakenly assume Distance is more important just because its raw numerical value is larger.
 
-**Transformation:** Scale both features to have a **mean of 0 and a standard deviation of 1**. This ensures that the predictive power of **Stops** has a fair and equal influence on the ETA calculation as **Distance**, regardless of their raw numerical values.
+**Transformation:** Both features are scaled to have a **mean of 0 and a standard deviation of 1**. This ensures that the predictive power of **Stops** has a fair and equal influence on the ETA calculation as **Distance**, regardless of their raw numerical values.
 """)
 scaler = StandardScaler()
 cols_to_scale = ['distance_miles', 'stops_count']
-logistics_df[['distance_scaled', 'stops_scaled']] = scaler.fit_transform(logistics_df[cols_to_scale])
-st.dataframe(logistics_df[['distance_miles', 'distance_scaled', 'stops_count', 'stops_scaled']].head(), use_container_width=True)
+# Ensure we operate on the original columns and write to new scaled columns
+df[['distance_scaled', 'stops_scaled']] = scaler.fit_transform(df[cols_to_scale]) 
+st.dataframe(df[['distance_miles', 'distance_scaled', 'stops_count', 'stops_scaled']].head(), use_container_width=True)
 st.write("---")
 
 
 # F. Frequency Encoding (delivery_region - High Cardinality)
 st.subheader("F. Frequency Encoding: Handling Rare Operational Segments")
 st.markdown("""
-**Business Context:** We have many delivery regions, but several are very rare (high **cardinality**). Creating an OHE column for every rare region leads to a chaotic, unstable model.
+**Business Context:** When a feature has many rare values (high **cardinality**), creating an OHE column for every rare region leads to an unstable model.
 
-**Transformation:** Replace the region name with the **count of how often that region appears**. This helps the model implicitly learn that low-frequency regions carry a higher risk of ETA variance due to non-standard operations or remote locations, avoiding the problem of rare categories.
+**Transformation:** The region name is replaced with the **count of how often that region appears**. This helps the model implicitly learn that low-frequency regions carry a higher risk of ETA variance due to non-standard operations or remote locations, avoiding the problem of rare categories.
 """)
-region_counts = logistics_df['delivery_region'].value_counts().to_dict()
-logistics_df['region_frequency'] = logistics_df['delivery_region'].map(region_counts)
-st.dataframe(logistics_df[['delivery_region', 'region_frequency']].sort_values(by='region_frequency').head(7), use_container_width=True)
+region_counts = df['delivery_region'].value_counts().to_dict()
+df['region_frequency'] = df['delivery_region'].map(region_counts)
+st.dataframe(df[['delivery_region', 'region_frequency']].sort_values(by='region_frequency').head(7), use_container_width=True)
 st.write("---")
