@@ -23,5 +23,5 @@ langchain-community>=0.2.16
 langchain-google-genai>=2.0.4
 google-generativeai>=0.7.2
 duckduckgo-search>=6.2.13
-xgboost==1.7.6
-shap==0.45.0
+xgboost==1.6.2  # Older but extremely stable
+shap==0.40.0   # Highly compatible with XGBoost 1.6.x
