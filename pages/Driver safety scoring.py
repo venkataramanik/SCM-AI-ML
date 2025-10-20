@@ -303,7 +303,7 @@ st.markdown("""
 - Track precision and recall over time and by region; adjust the threshold seasonally.
 - Combine with policy actions (training refresh, shift rotation, lane changes).
 
-### How the model decides, in plain terms
+### How the model decides
 - The tree tries questions like:
   - Are speeding events above a certain count.
   - Is the fatigue score above a certain level.
