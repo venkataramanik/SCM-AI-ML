@@ -2,7 +2,9 @@ streamlit
 pandas
 scikit-learn
 matplotlib
-
+numpy
+xgboost
+shap
 seaborn
 statsmodels
 prophet
@@ -25,7 +27,3 @@ google-generativeai>=0.7.2
 duckduckgo-search>=6.2.13
 
 
-# Fixes the 'bool8' and XGBoost compatibility issues:
-numpy==1.24.4 
-xgboost==1.6.2
-shap==0.40.0
