@@ -143,6 +143,3 @@ A related note from thinkers like **Taleb** and **Mandelbrot**: some environment
 If your lanes or seasons produce occasional extreme delays, a pure linear average can be misleading.  
 That’s where **percentile targets (P90 ETAs), quantile regression, stress tests,** or **buffering rules** help you plan for the tails rather than just the mean.
 """)
-```
-
-This version keeps your voice, shows the data, gives knobs to play with, makes residuals visible on demand, explains error and the two fitting approaches in plain language, and ends with a grounded “regression to the mean” perspective with Galton + a Taleb/Mandelbrot-style caution about fat tails.
