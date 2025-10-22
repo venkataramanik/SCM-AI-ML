@@ -22,9 +22,13 @@ data = pd.DataFrame({
     'Mileage_Total': np.random.randint(50000, 500000, size=N_SAMPLES)
 })
 
-# Introduce Missing Values
+# Introduce Missing Values strategically
 data.loc[data.sample(frac=0.2).index, 'Repair_Cost'] = np.nan
 data.loc[data.sample(frac=0.15).index, 'Last_GPS_Lag_Hours'] = np.nan
+
+# Ensure Repair_Cost is fixed using the stable np.maximum method for safety against Python 3.13/NumPy issue
+repair_costs = np.maximum(data['Repair_Cost'].values, 1)
+data['Repair_Cost'] = repair_costs
 
 st.title("Data Imputation: Filling the Gaps for Model Readiness")
 st.markdown("---")
@@ -55,12 +59,14 @@ st.write(f"Original Repair Cost Median: ${data['Repair_Cost'].median():,.2f}")
 st.write(f"Imputed Repair Cost Median: ${imputed_data['Repair_Cost_Median'].median():,.2f}")
 
 
-st.subheader("B. Trailer Type (Constant Imputation)")
+st.subheader("B. Trailer Type (Constant Imputation) - FIX APPLIED")
 st.markdown("Constant imputation marks missing categorical data with a specific label ('Unknown') to retain the information that the original data was missing.")
 
 # Constant Imputation for Categorical Data
 constant_imputer = SimpleImputer(missing_values=np.nan, strategy='constant', fill_value='Unknown')
-imputed_data['Trailer_Type_Constant'] = constant_imputer.fit_transform(imputed_data[['Trailer_Type']])
+
+# *** FIX FOR VALUEERROR: Use .ravel() to flatten the 2D output array to 1D ***
+imputed_data['Trailer_Type_Constant'] = constant_imputer.fit_transform(imputed_data[['Trailer_Type']]).ravel()
 
 st.write("Imputed Trailer Type Counts (Note the 'Unknown' category):")
 st.dataframe(imputed_data['Trailer_Type_Constant'].value_counts(dropna=False))
