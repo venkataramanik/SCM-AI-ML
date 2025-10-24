@@ -1,25 +1,24 @@
 # app.py
 # When a Port Sneezes, the World Catches a Cold — Interactive Ripple Demo (Streamlit)
 # ------------------------------------------------------------------------------
-# Purpose:
-#   Show how a local container shortage at one port can ripple through trade lanes.
-#   Focus is on clarity and business interpretation (no ML/AI jargon).
+# Order:
+#   0) Simulation Controls (TOP — users tweak here)
+#   1) Summary Blurb (auto-updates from controls)
+#   2) How to Read This
+#   3) Tools Used
+#   4) Why This Matters (Business Value)
+#   5) Charts (Final Ripple Map, Global Pressure Timeline)
+#   6) Tables (Peak, Centrality, Combined)
+#   7) Downloads (CSVs + JSON + Blurb)
 #
-# What it does:
-#   - Builds a small network of major ports and common routes
-#   - Seeds a shortage at one port and simulates how "pressure" spreads to neighbors
-#   - Lets you adjust spread strength, recovery speed, duration, and temporary closure
-#   - Produces two charts (final ripple map, global pressure timeline) and downloadable CSVs
-#
-# Requirements (add to requirements.txt):
+# Requirements (requirements.txt):
 # streamlit
 # networkx
 # matplotlib
 # pandas
 # numpy
 #
-# Run:
-#   streamlit run app.py
+# Run: streamlit run app.py
 
 from typing import Dict, Tuple
 import json
@@ -40,7 +39,6 @@ def build_network() -> nx.Graph:
         "Shenzhen", "Ningbo", "Busan", "Dubai", "Hamburg", "Felixstowe",
         "Tanjung Pelepas", "Valencia", "New York/New Jersey"
     ]
-    # Illustrative trade lanes (toy model for demonstration)
     edges = [
         ("Shanghai", "Singapore"),
         ("Shanghai", "Busan"),
@@ -74,7 +72,7 @@ def build_network() -> nx.Graph:
 
 
 def compute_centrality(G: nx.Graph) -> Dict[str, float]:
-    # Betweenness centrality indicates how often a port lies on shortest routes (a proxy for network importance).
+    # Betweenness centrality as a proxy for network importance (“super-spreader” potential)
     return nx.betweenness_centrality(G, normalized=True)
 
 
@@ -86,20 +84,19 @@ def simulate(
     decay: float = 0.15,
     closure_steps: int = 0,
     layout_seed: int = 3,
-) -> Tuple[pd.DataFrame, Dict[str, Tuple[float, float]]]:
+):
     """
-    Simulates shortage pressure over a number of steps.
-    - spread: portion of neighbor pressure that spills over each step (0..1)
-    - decay: natural recovery percentage each step (0..1)
-    - closure_steps: for the first N steps, remove all edges from the seed port
+    Simulates shortage pressure over 'steps'.
+    - spread: neighbor spillover strength (0..1)
+    - decay: natural recovery each step (0..1)
+    - closure_steps: temporarily remove all edges from seed for the first N steps
     Returns:
-      df: long-form DataFrame [time, port, stress]
+      df: long DataFrame [time, port, stress]
       pos: fixed layout positions for plotting
     """
     ports = list(G.nodes)
     pos = nx.spring_layout(G, seed=layout_seed)
 
-    # Initial pressure: only the seed is stressed at t=0
     stress = {p: 0.0 for p in ports}
     stress[seed] = 1.0
 
@@ -127,14 +124,14 @@ def simulate(
             inflow = sum(stress[n] for n in neigh) / len(neigh)
             new_stress[p] = min(1.0, new_stress[p] + spread * inflow)
 
-        # Keep the seed pressured during closure to reflect ongoing local issue
+        # Keep seed pressured during closure window
         if t in closure_window:
             new_stress[seed] = 1.0
 
         stress = new_stress
         history.append({"time": t, **stress})
 
-        # Restore removed edges after each step
+        # Restore edges after step
         if removed:
             G.add_edges_from(removed)
 
@@ -152,7 +149,7 @@ def plot_network(G: nx.Graph, df: pd.DataFrame, pos: Dict[str, Tuple[float, floa
         with_labels=True,
         node_size=[3000 if p == seed else 1800 for p in G.nodes],
         node_color=[final.get(p, 0.0) for p in G.nodes],  # default colormap (no manual colors)
-        font_size=8
+        font_size=8,
     )
     plt.title(f"Final Ripple Map (Seed: {seed})")
     plt.tight_layout()
@@ -186,63 +183,132 @@ def df_to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
-def linkedin_blurb(seed: str, spread: float, decay: float, closure_steps: int, ranks: pd.DataFrame) -> str:
+def summary_blurb(seed: str, spread: float, decay: float, closure_steps: int, ranks: pd.DataFrame) -> str:
     top3 = ranks.sort_values(["rank_peak", "rank_centrality"]).head(3)["port"].tolist()
     top3_txt = ", ".join(top3) if top3 else "multiple hubs"
-    return f"""One disruption can travel far.
+    return f"""**Summary Blurb**
 
-We simulated a small container shortage at one port and tracked how pressure spread along common trade lanes.
-Seed: {seed} | Spread: {spread} | Recovery: {decay} | Temporary closure steps: {closure_steps}
+**One disruption can travel far.**
 
-Observations:
-• Pressure clustered at central hubs: {top3_txt}.
+We simulated a small container shortage at one port and tracked how pressure spread along common trade lanes.  
+**Seed:** {seed} &nbsp;&nbsp;|&nbsp;&nbsp; **Spread:** {spread} &nbsp;&nbsp;|&nbsp;&nbsp; **Recovery:** {decay} &nbsp;&nbsp;|&nbsp;&nbsp; **Temporary closure steps:** {closure_steps}
+
+**Observations**  
+• Pressure clustered at central hubs: {top3_txt}.  
 • Local constraints can raise lead times and costs across distant lanes.
 
-Actions:
-• Pre-position empties near key hubs.
-• Trigger reroutes when pressure crosses thresholds.
-• Avoid over-reliance on a single port or corridor."""
+**Actions**  
+• Pre-position empties near key hubs.  
+• Trigger reroutes when pressure crosses thresholds.  
+• Avoid over-reliance on a single port or corridor.
+"""
 
 
-# --------------
-# Streamlit App
-# --------------
+def how_to_read_section() -> str:
+    return """**How to Read This**
+
+• Each port is a junction. A local shortage creates pressure that can spill into neighbors over shared routes.  
+• Over a few steps, the effect can spread widely, especially through central hubs.  
+• Use this to identify points where rerouting or extra containers can limit knock-on effects.
+"""
+
+
+def tools_used_section() -> str:
+    return """**Tools Used (Under the Hood)**
+
+• **Network Graph:** Ports are nodes; common trade lanes are edges.  
+• **Ripple Simulation:** Each step, a portion of a port’s pressure spills into its neighbors; all ports also recover a bit each step.  
+• **Centrality Ranking:** Betweenness centrality highlights “network-important” ports that often sit on key routes.  
+• **Peak Pressure Ranking:** Identifies which ports experienced the highest pressure at any time.  
+• **Scenario Toggles:** Change the seed port, spread, recovery, duration, and temporary closure to see different outcomes.  
+• **Data Exports:** Download history, rankings, and a machine-readable summary.
+"""
+
+
+def why_it_matters_section() -> str:
+    return """**Why This Matters (Business Value)**
+
+• **Early Warning:** Monitor critical junctions where local issues can become network-wide problems.  
+• **Reroute Playbooks:** Define thresholds that automatically trigger alternate ports or modes.  
+• **Right-Sizing Buffers:** Place empty containers, chassis, and yard capacity where they reduce global risk the most.  
+• **Supplier & Lane Diversification:** Avoid over-concentration on a few hubs or single corridors.  
+• **Customer Communication:** Proactively adjust ETAs and set expectations when upstream pressure rises.
+"""
+
+
+# --------------------
+# Streamlit page setup
+# --------------------
 
 st.set_page_config(page_title="Port Ripple Demo", layout="wide")
-
 st.title("When a Port Sneezes, the World Catches a Cold")
-st.caption("A simple network demonstration of how local shortages can ripple through trade lanes.")
 
-# Controls
-with st.sidebar:
-    st.header("Controls")
+# 0) SIMULATION CONTROLS (TOP)
+st.markdown("**Simulation Controls**")
+with st.form("controls_form", clear_on_submit=False):
     G = build_network()
     centrality = compute_centrality(G)
+    cols = st.columns([1.2, 1, 1, 1, 1, 1])
+    with cols[0]:
+        seed_port = st.selectbox("Seed Port", sorted(G.nodes), index=sorted(G.nodes).index("Shanghai"))
+    with cols[1]:
+        steps = st.number_input("Time Steps", min_value=5, max_value=60, value=12, step=1)
+    with cols[2]:
+        spread = st.number_input("Spread Strength (0..1)", min_value=0.0, max_value=1.0, value=0.45, step=0.05, format="%.2f")
+    with cols[3]:
+        decay = st.number_input("Recovery per Step (0..1)", min_value=0.0, max_value=1.0, value=0.15, step=0.05, format="%.2f")
+    with cols[4]:
+        closure_steps = st.number_input("Seed Closure (steps)", min_value=0, max_value=20, value=0, step=1)
+    with cols[5]:
+        layout_seed = st.number_input("Layout Seed", min_value=0, max_value=9999, value=3, step=1)
 
-    seed_port = st.selectbox("Seed Port", sorted(G.nodes), index=sorted(G.nodes).index("Shanghai"))
-    steps = st.slider("Time Steps", min_value=5, max_value=30, value=12, step=1)
-    spread = st.slider("Spread Strength (0..1)", min_value=0.0, max_value=1.0, value=0.45, step=0.05)
-    decay = st.slider("Recovery per Step (0..1)", min_value=0.0, max_value=1.0, value=0.15, step=0.05)
-    closure_steps = st.slider("Temporary Closure of Seed (steps)", min_value=0, max_value=10, value=0, step=1)
-    layout_seed = st.number_input("Layout Seed (for stable node placement)", min_value=0, max_value=9999, value=3, step=1)
+    c_run, c_reset = st.columns([0.2, 0.8])
+    submitted = c_run.form_submit_button("Run Simulation")
+    reset = c_reset.form_submit_button("Reset to Defaults")
 
-# Run simulation
+if reset:
+    seed_port, steps, spread, decay, closure_steps, layout_seed = "Shanghai", 12, 0.45, 0.15, 0, 3
+
+# Compute once based on current/last submitted values
+if "last_params" not in st.session_state or submitted or reset:
+    st.session_state.last_params = dict(
+        seed=seed_port, steps=int(steps), spread=float(spread),
+        decay=float(decay), closure_steps=int(closure_steps),
+        layout_seed=int(layout_seed)
+    )
+
+params = st.session_state.last_params
 df, pos = simulate(
     G.copy(),
-    seed=seed_port,
-    steps=steps,
-    spread=spread,
-    decay=decay,
-    closure_steps=closure_steps,
-    layout_seed=layout_seed,
+    seed=params["seed"],
+    steps=params["steps"],
+    spread=params["spread"],
+    decay=params["decay"],
+    closure_steps=params["closure_steps"],
+    layout_seed=params["layout_seed"],
 )
+peak, cent, ranks = make_rankings(df, centrality)
 
-# Charts
+# 1) SUMMARY BLURB (auto-updates from controls)
+st.markdown(summary_blurb(params["seed"], params["spread"], params["decay"], params["closure_steps"], ranks))
+
+# 2) HOW TO READ
+st.markdown(how_to_read_section())
+
+# 3) TOOLS USED
+st.markdown(tools_used_section())
+
+# 4) WHY THIS MATTERS
+st.markdown(why_it_matters_section())
+
+st.markdown("---")
+
+# 5) CHARTS
 c1, c2 = st.columns([1.08, 0.92])
 
 with c1:
     st.subheader("Final Ripple Map")
-    fig_net = plot_network(G, df, pos, seed_port)
+    fig_net = plot_network(G, df, pos, params["seed"])
     st.pyplot(fig_net, clear_figure=True)
 
 with c2:
@@ -250,9 +316,7 @@ with c2:
     fig_tl, global_stress = plot_global_timeline(df)
     st.pyplot(fig_tl, clear_figure=True)
 
-# Tables
-peak, cent, ranks = make_rankings(df, centrality)
-
+# 6) TABLES
 st.subheader("Peak Pressure by Port")
 st.dataframe(peak, use_container_width=True)
 
@@ -262,9 +326,9 @@ st.dataframe(cent.sort_values("betweenness", ascending=False), use_container_wid
 st.subheader("Combined View (Peak vs Centrality)")
 st.dataframe(ranks.sort_values(["rank_peak", "rank_centrality"]), use_container_width=True)
 
-# Downloads
+# 7) DOWNLOADS
 st.markdown("### Downloads")
-colA, colB, colC, colD = st.columns(4)
+colA, colB, colC, colD, colE = st.columns(5)
 with colA:
     st.download_button("Stress History CSV", data=df_to_csv_bytes(df), file_name="stress_history.csv")
 with colB:
@@ -274,33 +338,27 @@ with colC:
 with colD:
     st.download_button("Combined Ranking CSV", data=df_to_csv_bytes(ranks), file_name="ranking_combined.csv")
 
-# LinkedIn blurb
-st.markdown("### Summary Blurb")
-st.code(linkedin_blurb(seed_port, spread, decay, closure_steps, ranks), language="markdown")
-
-# Plain-English notes
-st.markdown("---")
-st.markdown("#### How to read this")
-st.markdown(
-    "- Each port is a junction. A local shortage creates pressure that can spill into neighbors over shared routes.\n"
-    "- Over a few steps, the effect can spread widely, especially through central hubs.\n"
-    "- Use this to identify points where rerouting or extra containers can limit knock-on effects."
-)
-
-# Machine-readable export
-summary = {
-    "seed": seed_port,
-    "steps": steps,
-    "spread": spread,
-    "decay": decay,
-    "closure_steps": closure_steps,
+summary_json = {
+    "seed": params["seed"],
+    "steps": params["steps"],
+    "spread": params["spread"],
+    "decay": params["decay"],
+    "closure_steps": params["closure_steps"],
     "top_impacted_by_peak": peak.head(5).to_dict(orient="records"),
 }
+with colE:
+    st.download_button(
+        "Summary (JSON)",
+        data=json.dumps(summary_json, indent=2).encode("utf-8"),
+        file_name="summary.json",
+        mime="application/json",
+    )
+
 st.download_button(
-    "Download Summary (JSON)",
-    data=json.dumps(summary, indent=2).encode("utf-8"),
-    file_name="summary.json",
-    mime="application/json",
+    "Summary Blurb (Markdown)",
+    data=summary_blurb(params["seed"], params["spread"], params["decay"], params["closure_steps"], ranks).encode("utf-8"),
+    file_name="summary_blurb.md",
+    mime="text/markdown",
 )
 
-st.caption("Demonstration only. Uses default matplotlib styles, one chart per figure.")
+st.caption("Demonstration only. Uses default matplotlib styles; one chart per figure.")
