@@ -347,6 +347,27 @@ def main():
     colD.metric("Net Profit", f"${st.session_state.metrics['profit']:,.2f}", 
                 delta_color=("inverse" if st.session_state.metrics['profit'] < 0 else "normal"))
 
+    # --- PROCESS STATUS DETAILS (Sales Order & Production Order) ---
+    st.markdown("---")
+    st.subheader("Process Details")
+    
+    # Sales Order Status (Active from Step 1 onwards)
+    if st.session_state.main_so_id:
+        st.markdown(
+            f"✅ **Active Sales Order:** `{st.session_state.main_so_id}` (Demand: **{st.session_state.metrics['demand']} Chairs**)")
+        
+        # Production Order Status (Active from Step 2 onwards)
+        if st.session_state.main_prod_order:
+            prod = st.session_state.main_prod_order
+            st.markdown(
+                f"🏭 **Active Production Order:** `{prod['id']}` (Qty: **{prod['quantity']}** | Status: **{prod['status']}**)")
+            
+            # Show materials needed if status is PLANNED
+            if prod['status'] == 'PLANNED':
+                 st.info(f"**MRP Run:** Production of {prod['quantity']} chairs required. Materials Planning Complete. Ready for Procurement.")
+            elif prod['status'] == 'COMPLETED':
+                 st.success("Manufacturing is **Complete**. Chairs are now in inventory, ready for shipping.")
+
     st.markdown("---")
 
     # --- DATA DISPLAY AREA ---
