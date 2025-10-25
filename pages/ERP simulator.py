@@ -17,14 +17,14 @@ BOM = {
 }
 
 # Define the sequential steps
+# The 'Sales Order Entry' step has been consolidated into the 'Configuration' step's execution.
 STEPS = [
-    "Initialize System",
-    "Sales Order Entry (Customer Demand)", # Updated step label
-    "Run Production Planning (MRP)",
-    "Execute Procurement (PO & Receipt)",
-    "Manufacturing Execution (Consume RM & Produce FG)",
-    "Shipping & Customer Invoice (Recognize Revenue & COGS)",
-    "Generate Financial Report (P&L)"
+    "Configuration & Initialization", # Index 0: Executes SO Entry logic
+    "Run Production Planning (MRP)",  # Index 1
+    "Execute Procurement (PO & Receipt)", # Index 2
+    "Manufacturing Execution (Consume RM & Produce FG)", # Index 3
+    "Shipping & Customer Invoice (Recognize Revenue & COGS)", # Index 4
+    "Generate Financial Report (P&L)" # Index 5
 ]
 
 # --- 2. STATE INITIALIZATION ---
@@ -42,7 +42,7 @@ def initialize_state():
     st.session_state.sales_orders = []
     st.session_state.purchase_orders = []
     st.session_state.production_orders = []
-    st.session_state.log = ["System Initialized. Click 'Next Step' to begin the ERP cycle."]
+    st.session_state.log = ["System Initialized. Configure the demand and click 'Start' to begin the ERP cycle."]
     st.session_state.main_so_id = None
     st.session_state.main_prod_order = None
     st.session_state.metrics = {'demand': 0, 'revenue': 0, 'profit': 0}
@@ -181,7 +181,8 @@ def execute_production():
     prod_order['status'] = 'COMPLETED'
     
     total_production_cost = total_rm_cost + total_labor_cost
-    cost_per_chair = total_production_cost / product_quantity
+    # Prevent division by zero if somehow production quantity is 0
+    cost_per_chair = total_production_cost / product_quantity if product_quantity > 0 else 0
     st.session_state.inventory['FG-CHAIR']['cost'] = cost_per_chair # Update FG cost
     
     log_message(f"Production completed. {product_quantity} Chairs added to stock. New Unit Cost: ${cost_per_chair:,.2f}", "MFG")
@@ -251,25 +252,32 @@ def run_step():
     current_step = st.session_state.step
     
     # Execute logic based on the current step number
-    if current_step == 1:
-        # Now uses the configured demand quantity
+    if current_step == 0:
+        # STEP 0: Configuration & Initialization
+        # Execute Sales Order Entry immediately on the 'Start' click to avoid double-click issue
         create_sales_order(quantity=st.session_state.initial_demand)
-    elif current_step == 2:
+        log_message("Sales Order accepted and demand registered.", "SALES")
+    elif current_step == 1:
+        # STEP 1: Run Production Planning (MRP)
         run_mrp()
-    elif current_step == 3:
+    elif current_step == 2:
+        # STEP 2: Execute Procurement (PO & Receipt)
         execute_procurement()
-    elif current_step == 4:
+    elif current_step == 3:
+        # STEP 3: Manufacturing Execution
         execute_production()
-    elif current_step == 5:
+    elif current_step == 4:
+        # STEP 4: Shipping & Customer Invoice
         ship_order()
-    elif current_step == 6:
+    elif current_step == 5:
+        # STEP 5: Generate Financial Report (P&L)
         generate_report()
     
     # Only increment if the simulation is not finished
     if current_step < len(STEPS) - 1:
         st.session_state.step += 1
     elif current_step == len(STEPS) - 1:
-        log_message("ERP Simulation Cycle Complete.", "INFO")
+        log_message("ERP Simulation Cycle Complete. Scroll down for the Financial Report.", "INFO")
         st.session_state.step += 1 # Mark as finished
 
 # --- 5. STREAMLIT UI LAYOUT ---
@@ -309,13 +317,17 @@ def main():
         
     col1.subheader(f"Current Process Step: {current_step_label}")
     
-    button_label = "Run " + STEPS[current_step_index+1] if current_step_index < len(STEPS) - 1 else "Generate Final Report"
-    
+    # --- Button Logic ---
     if current_step_index == 0:
-        button_label = "Start Simulation (Run Step 1: SO Entry)"
-    elif is_finished:
+        button_label = "Start Simulation (Run Sales Order Entry)" # Clearer label
+    elif current_step_index < len(STEPS) - 1:
+        # Button label shows the next step the process is moving into
+        button_label = "Run " + STEPS[current_step_index+1] 
+    elif current_step_index == len(STEPS) - 1:
+        button_label = "Generate Final Report"
+    else: # is_finished
         button_label = "Reset Simulation"
-        col1.info("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
+        col1.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
 
     if col2.button(button_label, use_container_width=True, type="primary"):
         # The logic here is now correct because initialize_state() fully resets all session variables
@@ -323,7 +335,7 @@ def main():
             # Reruns the entire script, calling initialize_state() which now resets everything
             initialize_state()
         else:
-            # Run the next step
+            # Run the current step's logic (which now includes SO entry for step 0)
             run_step()
             
     # --- METRICS DISPLAY ---
