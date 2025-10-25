@@ -257,7 +257,8 @@ def run_step():
         # STEP 0: Configuration & Initialization
         # Execute Sales Order Entry immediately on the 'Start' click to avoid double-click issue
         create_sales_order(quantity=st.session_state.initial_demand)
-        log_message("Sales Order accepted and demand registered.", "SALES")
+        # VISUAL FIX: Enhanced log message to show the process is advancing
+        log_message("Sales Order accepted and demand registered. Moving to Production Planning.", "SALES") 
     elif current_step == 1:
         # STEP 1: Run Production Planning (MRP)
         run_mrp()
@@ -292,18 +293,19 @@ def main():
     initialize_state()
 
     # --- CONFIGURATION (Only visible at Step 0) ---
+    # VISUAL FIX: Configuration elements are only rendered when step == 0. They disappear after the first click.
     if st.session_state.step == 0:
-        st.subheader("Simulation Configuration")
-        # The sales order quantity is now user-defined here
-        st.session_state.initial_demand = st.number_input(
-            "Initial Sales Order (SO) Demand Quantity (Chairs)",
-            min_value=1,
-            max_value=100,
-            value=st.session_state.initial_demand,
-            step=5,
-            help="This is the customer order that triggers the entire ERP cycle."
-        )
-        st.info(f"The simulation will start with an initial inventory of **10 FG-CHAIRS**.")
+        with st.container():
+            st.subheader("Simulation Configuration")
+            st.session_state.initial_demand = st.number_input(
+                "Initial Sales Order (SO) Demand Quantity (Chairs)",
+                min_value=1,
+                max_value=100,
+                value=st.session_state.initial_demand,
+                step=5,
+                help="This is the customer order that triggers the entire ERP cycle."
+            )
+            st.info(f"The simulation will start with an initial inventory of **10 FG-CHAIRS**.")
 
     # --- CONTROL AND STATUS BAR ---
     col1, col2 = st.columns([3, 1])
@@ -317,6 +319,7 @@ def main():
     else:
         current_step_label = "Simulation Complete"
         
+    # The header shows the current step index correctly
     col1.subheader(f"Current Process Step: {current_step_label}")
     
     # --- Button Logic ---
