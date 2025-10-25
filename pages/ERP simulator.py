@@ -326,10 +326,11 @@ def main():
     st.title("Custom Chair Manufacturing ERP Simulator")
     st.markdown("Execute the full **Order-to-Cash** and **Procure-to-Pay** cycle step-by-step. Note the detailed material, manufacturing, and financial impact at each stage.")
 
-    # Initialize state
-    # FIX: Check for both 'step' and 'metrics' to ensure robust initialization
-    if 'step' not in st.session_state or 'metrics' not in st.session_state:
+    # Initialize state - if 'step' is missing or the reset flag is set, run initialization
+    if 'step' not in st.session_state or st.session_state.get('reset_flag', False):
         initialize_state()
+        if 'reset_flag' in st.session_state:
+            del st.session_state.reset_flag # Clear the flag immediately after reset
     
     # --- CONFIGURATION (Only visible at Step 0) ---
     if st.session_state.step == 0:
@@ -355,7 +356,7 @@ def main():
     if is_finished:
         st.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
         if st.button("Reset Simulation", use_container_width=True, type="primary"):
-            initialize_state()
+            st.session_state.reset_flag = True # Set flag to force initialization on next run
     else:
         cols = st.columns(len(STEPS))
 
@@ -376,7 +377,6 @@ def main():
             
     # --- METRICS DISPLAY ---
     colA, colB, colC, colD, colE = st.columns(5)
-    # This line is now protected by the robust initialization check above
     colA.metric("Demand", f"{st.session_state.metrics['demand']} Chairs")
     colB.metric("FG Stock", f"{st.session_state.inventory['FG-CHAIR']['stock']} EA")
     colC.metric("Work In Process (WIP)", f"${st.session_state.wip:,.2f}")
@@ -384,6 +384,28 @@ def main():
     colE.metric("Net Profit", f"${st.session_state.metrics['profit']:,.2f}", 
                 delta_color=("inverse" if st.session_state.metrics['profit'] < 0 else "normal"))
 
+    # --- PROCUREMENT STATUS (New Section for POs) ---
+    st.markdown("---")
+    st.subheader("Procurement Status")
+
+    # Display Active Purchase Orders
+    active_pos = [po for po in st.session_state.purchase_orders if po['status'] != 'RECEIVED']
+
+    if active_pos:
+        st.markdown("#### 🛒 Active Purchase Orders (Expected Receipts)")
+        po_df = pd.DataFrame(active_pos)
+        po_display_df = po_df[['id', 'material', 'quantity', 'total_cost', 'status']].rename(columns={
+            'id': 'PO ID',
+            'material': 'Material',
+            'quantity': 'Qty Expected',
+            'total_cost': 'Total Commitment',
+            'status': 'Status'
+        })
+        po_display_df['Total Commitment'] = po_display_df['Total Commitment'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(po_display_df, hide_index=True, use_container_width=True)
+    else:
+        st.info("No active Purchase Orders currently awaiting receipt.")
+    
     # --- PROCESS STATUS DETAILS (Sales Order, Prod Order, BOM, Routing) ---
     st.markdown("---")
     st.subheader("BOM, Routing, and Process Status")
