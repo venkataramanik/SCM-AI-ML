@@ -17,7 +17,6 @@ BOM = {
 }
 
 # Define the sequential steps
-# The 'Sales Order Entry' step has been consolidated into the 'Configuration' step's execution.
 STEPS = [
     "Configuration & Initialization", # Index 0: Executes SO Entry logic
     "Run Production Planning (MRP)",  # Index 1
@@ -140,7 +139,6 @@ def execute_procurement():
     pending_pos = [po for po in st.session_state.purchase_orders if po['status'] == 'SENT_TO_SUPPLIER']
     
     if not pending_pos:
-        # LOGGING IMPROVEMENT: Clearly state that the check was performed and no action was needed.
         log_message("Procurement Check: No Purchase Orders were pending for receipt (Raw Materials are sufficient).", "PROCUREMENT")
         return
 
@@ -252,9 +250,6 @@ def run_step():
     """Executes the logic for the current step and increments the counter."""
     current_step = st.session_state.step
     
-    # LOG FIX: Diagnostic print to confirm logic before execution
-    log_message(f"Executing Step {current_step+1} logic (Internal Counter: {current_step})...", "DEBUG")
-
     # Execute logic based on the current step number
     if current_step == 0:
         # STEP 0: Configuration & Initialization
@@ -279,13 +274,24 @@ def run_step():
     # Only increment if the simulation is not finished
     if current_step < len(STEPS) - 1:
         st.session_state.step += 1
-        # LOG FIX: Diagnostic print to confirm increment happened
-        log_message(f"Step counter successfully incremented to {st.session_state.step}.", "DEBUG")
     elif current_step == len(STEPS) - 1:
         log_message("ERP Simulation Cycle Complete. Scroll down for the Financial Report.", "INFO")
         st.session_state.step += 1 # Mark as finished
 
-# --- 5. STREAMLIT UI LAYOUT ---
+# --- 5. BUTTON HANDLER ---
+
+def handle_button_click():
+    """The dedicated callback function for the main action button."""
+    # Check if the cycle is finished (step counter is past the last step index)
+    if st.session_state.step > len(STEPS) - 1:
+        # If finished, reset the state
+        initialize_state()
+    else:
+        # Otherwise, run the logic for the current step and increment
+        run_step()
+
+
+# --- 6. STREAMLIT UI LAYOUT ---
 
 def main():
     st.set_page_config(layout="wide", page_title="ERP Simulator")
@@ -295,19 +301,18 @@ def main():
     # Initialize state (or reset if the button was clicked)
     initialize_state()
     
-    # VISUAL FIX: Adding a visible confirmation of the current step counter
-    st.caption(f"**Internal Step Counter:** {st.session_state.step}") 
-
     # --- CONFIGURATION (Only visible at Step 0) ---
     if st.session_state.step == 0:
         with st.container():
             st.subheader("Simulation Configuration")
+            # Bind number input to session state key 'initial_demand'
             st.session_state.initial_demand = st.number_input(
                 "Initial Sales Order (SO) Demand Quantity (Chairs)",
                 min_value=1,
                 max_value=100,
                 value=st.session_state.initial_demand,
                 step=5,
+                key='demand_input', # Use a key for reliable state tracking
                 help="This is the customer order that triggers the entire ERP cycle."
             )
             st.info(f"The simulation will start with an initial inventory of **10 FG-CHAIRS**.")
@@ -316,10 +321,11 @@ def main():
     col1, col2 = st.columns([3, 1])
     
     current_step_index = st.session_state.step
-    is_finished = current_step_index >= len(STEPS)
+    is_finished = current_step_index > len(STEPS) - 1 # Check if we are past the last step
     
     if not is_finished:
         # Show the step index
+        # We access the list using the current_step_index (0-5)
         current_step_label = f"Step {current_step_index+1}/{len(STEPS)}: {STEPS[current_step_index]}"
     else:
         current_step_label = "Simulation Complete"
@@ -330,21 +336,20 @@ def main():
     # --- Button Logic ---
     if current_step_index == 0:
         button_label = "Execute Step 1: Configuration & Sales Order Entry" 
-    elif current_step_index < len(STEPS) - 1:
+    elif current_step_index < len(STEPS):
+        # Current index is 1-5, which is steps 2-6
         button_label = f"Execute Step {current_step_index+1}: {STEPS[current_step_index]}"
-    elif current_step_index == len(STEPS) - 1:
-        button_label = "Execute Step 6: Generate Financial Report"
-    else: # is_finished
+    else: # is_finished (current_step_index is 6)
         button_label = "Reset Simulation"
         col1.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
 
-    if col2.button(button_label, use_container_width=True, type="primary"):
-        if is_finished:
-            # Fully reset the state
-            initialize_state()
-        else:
-            # Run the current step's logic
-            run_step()
+    # New implementation using the on_click callback
+    col2.button(
+        button_label, 
+        use_container_width=True, 
+        type="primary",
+        on_click=handle_button_click
+    )
             
     # --- METRICS DISPLAY ---
     st.markdown("---")
