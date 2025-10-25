@@ -29,4 +29,5 @@ networkx
 lxml==5.3.0
 html5lib==1.1
 beautifulsoup4==4.12.3
+requests==2.32.3
 
