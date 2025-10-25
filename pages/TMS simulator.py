@@ -1,6 +1,5 @@
 # app.py (or pages/TMS simulator.py)
-# TMS Step-by-Step Simulator (Robust lanes + no icons)
-
+# TMS Step-by-Step Simulator — Next button fixed (always visible on page)
 import math, random, uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -42,7 +41,6 @@ GEO = {
 }
 
 def miles(a, b):
-    # SAFE lookup with clear error message instead of KeyError
     a = normalize_code(a); b = normalize_code(b)
     if a not in GEO or b not in GEO:
         raise ValueError("Unknown code(s): origin=%r valid=%r, dest=%r valid=%r" %
@@ -113,42 +111,21 @@ if st.session_state.step is None:
 if st.session_state.seed is None:
     st.session_state.seed = 11
 
-# ---------------- Sidebar Controls ----------
-st.sidebar.header("Controls")
+# ---------------- Sidebar: lanes & options ---
+st.sidebar.header("Inputs")
 lanes_default = "ATL:JFK, ATL:ORD, DFW:LAX, ORD:DEN, DEN:SEA"
 lanes_str = st.sidebar.text_input("Lanes (origin:dest, comma separated)", value=lanes_default)
-st.sidebar.write("Known codes:", ", ".join(sorted(GEO.keys())))
-st.sidebar.write("Tip: codes are IATA-like and case-insensitive.")
+st.sidebar.caption("Known codes: " + ", ".join(sorted(GEO.keys())))
 
-colb1, colb2, colb3 = st.sidebar.columns(3)
-with colb1:
-    if st.button("Next Step →"):
-        st.session_state.step = min(st.session_state.step + 1, 6)
-with colb2:
-    if st.button("Run All"):
-        st.session_state.step = 6
-with colb3:
-    if st.button("Reset"):
-        for k in DEFAULT_KEYS:
-            st.session_state[k] = None
-        st.session_state.step = 0
-        st.session_state.seed = 11
-        st.experimental_rerun()
-
-# ---------------- Parse Lanes Safely --------
 def parse_lanes(text):
-    valid = []
-    rejected = []
+    valid, rejected = [], []
     tokens = [t.strip() for t in (text or "").split(",") if t.strip()]
     for tok in tokens:
-        if ":" not in tok:
-            rejected.append(tok); continue
+        if ":" not in tok: rejected.append(tok); continue
         o, d = tok.split(":", 1)
         o, d = normalize_code(o), normalize_code(d)
-        if o in GEO and d in GEO:
-            valid.append((o, d))
-        else:
-            rejected.append(tok)
+        if o in GEO and d in GEO: valid.append((o, d))
+        else: rejected.append(tok)
     return valid, rejected
 
 lanes_valid, lanes_rejected = parse_lanes(lanes_str)
@@ -156,11 +133,7 @@ st.session_state.lanes_valid = lanes_valid
 st.session_state.lanes_rejected = lanes_rejected
 
 if lanes_rejected:
-    st.warning("Ignored invalid lanes: %s" % ", ".join(lanes_rejected))
-
-if not lanes_valid:
-    st.error("No valid lanes. Please fix the lanes field in the sidebar.")
-    st.stop()
+    st.sidebar.warning("Ignored invalid lanes: %s" % ", ".join(lanes_rejected))
 
 # ---------------- Business Logic ------------
 def choose_mode(weight_lb):
@@ -178,10 +151,9 @@ def make_orders(lanes, seed):
     return out
 
 def rate_order(o):
-    # Fully safe: if distances fail, return a marked invalid load (and the UI will show it)
     try:
         dist = miles(o.origin, o.destination)
-    except ValueError as e:
+    except ValueError:
         return Load(gen_id("LOAD"), "INVALID", o.origin, o.destination, 0.0, 0.0, "INVALID", None)
     mode = choose_mode(o.weight_lb)
     if mode == "PARCEL":
@@ -218,8 +190,7 @@ def tender(loads):
 def make_events(loads):
     out = []
     for ld in loads:
-        if ld.tender != "ACCEPTED":
-            continue
+        if ld.tender != "ACCEPTED": continue
         t0 = datetime.now()
         out.append(Event(ld.load_id, "PU",  "Picked up by %s" % ld.carrier, t0.strftime("%Y-%m-%d %H:%M")))
         out.append(Event(ld.load_id, "DEL", "Delivered", (t0 + timedelta(hours=6)).strftime("%Y-%m-%d %H:%M")))
@@ -249,16 +220,37 @@ def paymatch(loads, invoices, tol_pct=0.02, tol_abs=10.0):
                 out.append(PayDecision(inv.load_id, expected, inv.total, "APPROVED", "Underrun; approve"))
     return out
 
-# ---------------- Header --------------------
+# ---------------- Header & Top Controls -----
 st.title("TMS Step-by-Step Simulator")
+
 st.write(
-    "Watch freight flow through a TMS: "
-    "1) Order Capture → 2) Rating & Mode → 3) Load Planning → 4) Tendering → 5) Events → 6) Invoice & 3-Way Match.\n"
-    "Use the sidebar buttons to step or run all."
+    "Watch freight flow: "
+    "1) Order Capture → 2) Rating & Mode → 3) Load Planning → 4) Tendering → 5) Events → 6) Invoice & 3-Way Match."
 )
 
+# Always-visible main-page controls (NOT in sidebar)
+c1, c2, c3 = st.columns([1,1,1])
+with c1:
+    if st.button("Next Step →", key="next_main"):
+        st.session_state.step = min((st.session_state.step or 0) + 1, 6)
+with c2:
+    if st.button("Run All", key="runall_main"):
+        st.session_state.step = 6
+with c3:
+    if st.button("Reset", key="reset_main"):
+        for k in DEFAULT_KEYS:
+            st.session_state[k] = None
+        st.session_state.step = 0
+        st.session_state.seed = 11
+        st.experimental_rerun()
+
+# ---------------- Guard rails --------------
+if not st.session_state.lanes_valid:
+    st.error("No valid lanes. Add at least one valid origin:dest pair in the sidebar.")
+    st.stop()
+
 # ---------------- Steps ---------------------
-step = st.session_state.step
+step = st.session_state.step or 0
 
 # Step 1
 if step >= 1:
@@ -271,7 +263,7 @@ if step >= 1:
 # Step 2
 if step >= 2:
     st.header("2) Rating & Mode Selection")
-    st.info("Each order is priced by a feasible mode (Parcel/LTL/TL) using distance and weight. Invalid lanes appear marked as INVALID.")
+    st.info("Each order is priced by a feasible mode (Parcel/LTL/TL) using distance and weight. INVALID loads indicate bad lanes.")
     if st.session_state.loads is None:
         st.session_state.loads = [rate_order(o) for o in st.session_state.orders]
     st.dataframe(df([asdict(l) for l in st.session_state.loads]), use_container_width=True)
@@ -310,4 +302,4 @@ if step >= 6:
     st.dataframe(df([asdict(p) for p in st.session_state.pay]), use_container_width=True)
 
 st.markdown("---")
-st.caption("TMS Simulation • Streamlit app • Robust lane handling")
+st.caption("TMS Simulation • Streamlit app • Always-visible Next button")
