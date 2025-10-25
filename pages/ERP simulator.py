@@ -327,7 +327,8 @@ def main():
     st.markdown("Execute the full **Order-to-Cash** and **Procure-to-Pay** cycle step-by-step. Note the detailed material, manufacturing, and financial impact at each stage.")
 
     # Initialize state
-    if 'step' not in st.session_state:
+    # FIX: Check for both 'step' and 'metrics' to ensure robust initialization
+    if 'step' not in st.session_state or 'metrics' not in st.session_state:
         initialize_state()
     
     # --- CONFIGURATION (Only visible at Step 0) ---
@@ -375,6 +376,7 @@ def main():
             
     # --- METRICS DISPLAY ---
     colA, colB, colC, colD, colE = st.columns(5)
+    # This line is now protected by the robust initialization check above
     colA.metric("Demand", f"{st.session_state.metrics['demand']} Chairs")
     colB.metric("FG Stock", f"{st.session_state.inventory['FG-CHAIR']['stock']} EA")
     colC.metric("Work In Process (WIP)", f"${st.session_state.wip:,.2f}")
