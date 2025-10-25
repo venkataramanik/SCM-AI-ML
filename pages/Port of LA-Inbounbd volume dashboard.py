@@ -1,313 +1,254 @@
-# streamlit_app.py
-# Port of Los Angeles "The Signal" dashboard (no tokens, no AI icon).
-# Sections:
-# 1) Data Source  2) What We Do With The Data  3) Analysis & Implications  4) Dashboards
-import os
-os.system("pip install -q html5lib lxml")
-import pandas as pd
-import numpy as np
+# Port of Los Angeles – Container Statistics (official, no token)
+# Sections: Data Source • What We Do • Dashboards • Analysis & Implications
+import pandas as pd, numpy as np
 import streamlit as st
 from datetime import datetime
 
-st.set_page_config(page_title="Port of LA – The Signal Dashboard", layout="wide")
+st.set_page_config(page_title="Port of LA – Container Stats", layout="wide")
+TITLE = "Port of Los Angeles — Container Statistics Dashboard"
+SOURCE_URL = "https://www.portoflosangeles.org/business/statistics/container-statistics"
 
-TITLE = "Port of Los Angeles – Inbound Volume Dashboard"
-SOURCE_URL = "https://signal.portoptimizer.com/"
-
-# -------------------------------
-# Section: Header
-# -------------------------------
 st.title(TITLE)
-st.caption("A practical, business-focused view of inbound container flow using the public 'The Signal' page.")
+st.caption("Official monthly TEUs from the Port of LA (public HTML tables). No API keys required.")
 
-# -------------------------------
-# Helpers
-# -------------------------------
 @st.cache_data(ttl=6*3600, show_spinner=True)
-def load_signal_table():
-    """
-    Attempt to read the main table from Port of LA 'The Signal' page via pandas.read_html.
-    Returns a tidy DataFrame with normalized column names and types.
-    """
-    tables = pd.read_html(SOURCE_URL)
-    # The page usually has a primary table with weekly forecast/actual TEUs.
-    # If structure changes, pick the widest table.
+def load_polala_stats():
+    # Read all tables on the stats page; pick the widest/monthly one
+    tables = pd.read_html(SOURCE_URL, flavor="lxml")
     df = max(tables, key=lambda t: t.shape[1]).copy()
 
-    # Normalize column names
+    # Try to normalize common structures seen on this page
+    # Often columns look like: ["Month", "Loaded Imports", "Loaded Exports", "Empty Containers", "Total TEUs", "YTD", ...]
     df.columns = [str(c).strip().replace("\n", " ") for c in df.columns]
-
-    # Try common name patterns; fallback gracefully
-    # Expected columns (examples): "Week of", "Forecast TEUs", "Actual TEUs", "% Difference"
-    colmap_candidates = {
-        "week": ["Week of", "Week", "Week Beginning", "Week beginning", "Week Start"],
-        "forecast": ["Forecast TEUs", "Forecast", "Forecast TEU", "Forecast (TEUs)"],
-        "actual": ["Actual TEUs", "Actual", "Actual TEU", "Actual (TEUs)"],
-        "pct_diff": ["% Difference", "Difference %", "Forecast vs Actual (%)", "% diff"],
-    }
-
-    def best_match(name_list):
-        for name in name_list:
-            if name in df.columns:
-                return name
+    # Rename with flexible matching
+    def find(colnames, options):
+        for o in options:
+            if o in colnames: return o
         return None
 
-    week_col = best_match(colmap_candidates["week"])
-    forecast_col = best_match(colmap_candidates["forecast"])
-    actual_col = best_match(colmap_candidates["actual"])
-    pct_col = best_match(colmap_candidates["pct_diff"])
+    cols = df.columns.tolist()
+    month_col = find(cols, ["Month", "MONTH"])
+    imports_col = find(cols, ["Loaded Imports","Imports (Loaded)","Loaded inbound"])
+    exports_col = find(cols, ["Loaded Exports","Exports (Loaded)","Loaded outbound"])
+    empties_col = find(cols, ["Empty Containers","Empties"])
+    total_col = find(cols, ["Total TEUs","TOTAL (TEUs)","TEUs Total","Total"])
 
-    # Basic validation
-    needed = [week_col, forecast_col, actual_col]
-    if any(x is None for x in needed):
-        raise ValueError("Expected columns not found. The page layout may have changed.")
+    # Keep only relevant columns available
+    keep = [c for c in [month_col, imports_col, exports_col, empties_col, total_col] if c]
+    df = df[keep].copy()
 
-    out = df[[week_col, forecast_col, actual_col] + ([pct_col] if pct_col else [])].copy()
-    out = out.rename(columns={
-        week_col: "week",
-        forecast_col: "forecast_teus",
-        actual_col: "actual_teus",
-        (pct_col if pct_col else "pct_diff"): "pct_diff"
-    })
+    # Rename
+    ren = {}
+    if month_col: ren[month_col] = "month"
+    if imports_col: ren[imports_col] = "imports_loaded"
+    if exports_col: ren[exports_col] = "exports_loaded"
+    if empties_col: ren[empties_col] = "empties"
+    if total_col: ren[total_col] = "total_teus"
+    df = df.rename(columns=ren)
 
-    # Coerce types
-    out["week"] = pd.to_datetime(out["week"], errors="coerce")
-    for c in ["forecast_teus", "actual_teus"]:
-        out[c] = (
-            out[c]
-            .astype(str)
-            .str.replace(",", "", regex=False)
-            .str.extract(r"([0-9]+)", expand=False)
-            .astype(float)
-        )
+    # Coerce numerics (strip commas & notes)
+    for c in ["imports_loaded","exports_loaded","empties","total_teus"]:
+        if c in df.columns:
+            df[c] = (
+                df[c].astype(str)
+                    .str.replace(",", "", regex=False)
+                    .str.extract(r"(-?\d+\.?\d*)", expand=False)
+            )
+            df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    if "pct_diff" in out.columns:
-        out["pct_diff"] = (
-            out["pct_diff"]
-            .astype(str)
-            .str.replace("%", "", regex=False)
-            .str.extract(r"(-?\d+\.?\d*)", expand=False)
-            .astype(float)
-        )
+    # Build a proper date: "Month YYYY" sometimes appears; otherwise infer.
+    # Try to parse month text plus year from context: the page is "latest month" table; we’ll attempt month names.
+    # If there's a Month column with names (Jan, February ...), attach a year series by forward/back fill.
+    # Heuristic: when month names repeat, it's a multi-year table; detect a Year column if any.
+    # If not present, we’ll try to infer with an increasing index within the current year.
+    # 1) Try direct parse:
+    def parse_month(mtxt):
+        try:
+            return pd.to_datetime(mtxt, format="%B %Y")  # "January 2025"
+        except:
+            try:
+                return pd.to_datetime(mtxt, format="%b %Y")  # "Jan 2025"
+            except:
+                try:
+                    # if just "January" etc., we’ll attach year later
+                    return pd.to_datetime(mtxt, format="%B")
+                except:
+                    try:
+                        return pd.to_datetime(mtxt, format="%b")
+                    except:
+                        return pd.NaT
 
-    # Sort ascending by week
-    out = out.dropna(subset=["week"]).sort_values("week").reset_index(drop=True)
+    df["month_dt"] = df["month"].apply(parse_month)
 
-    # Derive fields
-    out["wow_actual_change_pct"] = out["actual_teus"].pct_change() * 100.0
-    out["rolling_4w_actual"] = out["actual_teus"].rolling(4, min_periods=1).mean()
-    out["yoy_actual_change_pct"] = (
-        (out["actual_teus"] / out["actual_teus"].shift(52) - 1.0) * 100.0
-        if len(out) >= 60 else np.nan
-    )
+    # If yearless, assign sequential months ending at the latest known release around the 15th
+    if df["month_dt"].isna().all():
+        # Assume rows are chronological; attach a synthetic year by rolling back from now.
+        # We’ll just enumerate 12 months ending this month as a fallback.
+        today = pd.Timestamp.utcnow().tz_localize(None)
+        n = len(df)
+        seq = pd.date_range(end=today.replace(day=1), periods=n, freq="MS")
+        df["month_dt"] = seq
 
-    # Create a 'year-week' label for heatmaps
-    out["year"] = out["week"].dt.isocalendar().year.astype(int)
-    out["iso_week"] = out["week"].dt.isocalendar().week.astype(int)
+    # Clean duplicates, drop blank rows
+    df = df.dropna(subset=["month_dt"]).drop_duplicates(subset=["month_dt"]).sort_values("month_dt")
+    df = df.reset_index(drop=True)
 
-    return out
+    # Derive metrics
+    if "total_teus" not in df.columns:
+        # reconstruct if not provided
+        df["total_teus"] = df[["imports_loaded","exports_loaded","empties"]].sum(axis=1, min_count=1)
 
-def format_number(x):
-    if pd.isna(x):
-        return "—"
-    return f"{int(x):,}"
+    df["yoy_total_pct"] = (df["total_teus"] / df["total_teus"].shift(12) - 1.0) * 100.0
+    df["mom_total_pct"] = (df["total_teus"] / df["total_teus"].shift(1) - 1.0) * 100.0
+    for part in ["imports_loaded","exports_loaded","empties"]:
+        if part in df.columns:
+            df[f"{part}_share_pct"] = (df[part] / df["total_teus"]) * 100.0
 
-def format_pct(x, decimals=1):
-    if pd.isna(x):
-        return "—"
-    return f"{x:.{decimals}f}%"
+    return df
 
-# -------------------------------
-# Section: Data Source
-# -------------------------------
+# ---------- Data Source section ----------
 with st.expander("Data Source", expanded=True):
     st.markdown(f"""
-- **Primary Source:** [Port of Los Angeles – The Signal]({SOURCE_URL})  
-- **Data Type:** Weekly inbound container volumes (TEUs), forecasts vs. actuals  
-- **Access Method:** Public HTML table parsed via `pandas.read_html()`  
-- **Refresh in App:** Every 6 hours (cached)  
-- **Downloaded at:** {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}
+- **Source:** [Port of Los Angeles — Container Statistics]({SOURCE_URL})  
+- **What it is:** Official **monthly** TEU counts by category (imports, exports, empties) with latest month posted around the **15th** of each month.  
+- **Access:** Public HTML tables parsed by `pandas.read_html()` (no API key).  
+- **Last fetched (UTC):** {datetime.utcnow().strftime("%Y-%m-%d %H:%M")}
 """)
 
-# -------------------------------
-# Section: What We Do With The Data
-# -------------------------------
+# ---------- Methodology section ----------
 with st.expander("What We Do With The Data (Methodology)", expanded=True):
     st.markdown("""
-1. **Extract** the weekly table using `pandas.read_html()` and normalize headers.  
-2. **Clean & Typecast**: parse dates, convert TEU strings to numeric, strip percent signs.  
-3. **Engineer Features**:  
-   - Week-over-week change in actual TEUs (`wow_actual_change_pct`)  
-   - 4-week rolling average of actual TEUs (`rolling_4w_actual`)  
-   - Year-over-year change in actual TEUs (`yoy_actual_change_pct`, when ≥ 52 weeks available)  
-4. **Visualize**: trend lines (forecast vs actual), rolling averages, accuracy, and a WoW heatmap.  
-5. **Flag Risks**: simple rules on spikes/drops to drive operational discussion.
+1) **Extract** HTML tables with `pandas.read_html()` → select the **widest** table.  
+2) **Normalize** headers and coerce numeric fields (strip commas/notes).  
+3) **Build time index** (`month_dt`) and **derive metrics**:  
+   - **MoM** and **YoY** % change of **Total TEUs**  
+   - **Mix shares**: Imports / Exports / Empties as % of total  
+4) **Visualize**:  
+   - KPIs for latest month  
+   - Trend lines for Total + components  
+   - YoY bar chart  
+   - Mix over time & volatility  
+5) **Implications**: Auto-generated bullets to translate signals into **operations & cost** decisions.
 """)
 
-# -------------------------------
-# Load Data + Guardrails
-# -------------------------------
+# ---------- Load data ----------
 try:
-    df = load_signal_table()
+    df = load_polala_stats()
 except Exception as e:
-    st.error(f"Could not load the data from The Signal. Error: {e}")
+    st.error(f"Could not load Container Statistics. Error: {e}")
     st.stop()
 
 if df.empty:
-    st.warning("Data loaded but appears empty.")
+    st.warning("Container Statistics loaded but appears empty.")
     st.stop()
 
-# -------------------------------
-# Section: Dashboards (Tabs)
-# -------------------------------
-tab_overview, tab_trends, tab_accuracy, tab_heatmap, tab_table = st.tabs(
-    ["Overview", "Trends", "Forecast vs Actual", "WoW Heatmap", "Data Table"]
+# ---------- Dashboards ----------
+tab_overview, tab_trends, tab_yoy, tab_mix, tab_table = st.tabs(
+    ["Overview", "Trends", "YoY Change", "Mix & Volatility", "Data Table"]
 )
 
-# ---------- Overview ----------
 with tab_overview:
-    st.subheader("Key Metrics")
+    st.subheader("Key Metrics (Latest Month)")
     latest = df.iloc[-1]
     prev = df.iloc[-2] if len(df) >= 2 else latest
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Month", latest["month_dt"].strftime("%b %Y"))
+    c2.metric("Total TEUs", f"{int(latest['total_teus']):,}",
+              delta=f"{((latest['total_teus']/prev['total_teus']-1)*100):.1f}% MoM" if prev["total_teus"]>0 else None)
+    if "imports_loaded" in df.columns:
+        c3.metric("Loaded Imports", f"{int(latest['imports_loaded']):,}")
+    if "exports_loaded" in df.columns:
+        c4.metric("Loaded Exports", f"{int(latest['exports_loaded']):,}")
 
-    kpi_cols = st.columns(4)
-    kpi_cols[0].metric("Latest Week", latest["week"].date().isoformat())
-    kpi_cols[1].metric("Actual TEUs", format_number(latest["actual_teus"]),
-                       delta=format_number(latest["actual_teus"] - prev["actual_teus"]) if len(df) >= 2 else None)
-    kpi_cols[2].metric("Forecast TEUs", format_number(latest["forecast_teus"]))
-    kpi_cols[3].metric("WoW Change (Actual)", format_pct(latest["wow_actual_change_pct"]),
-                       delta=f"{format_pct(latest['wow_actual_change_pct'] - prev['wow_actual_change_pct'])}" if len(df) >= 3 and pd.notna(prev["wow_actual_change_pct"]) else None)
-
-    st.markdown("---")
-
-    # Simple risk flags
-    flags = []
-    if pd.notna(latest["wow_actual_change_pct"]):
-        if latest["wow_actual_change_pct"] >= 8:
-            flags.append("Significant week-over-week increase in inbound TEUs (≥ 8%). Consider drayage and cross-dock capacity adjustments.")
-        if latest["wow_actual_change_pct"] <= -8:
-            flags.append("Significant week-over-week drop in inbound TEUs (≤ -8%). Expect softer near-term warehouse labor demand.")
-    if len(df) >= 5:
-        if latest["actual_teus"] > df["rolling_4w_actual"].iloc[-2] * 1.10:
-            flags.append("Actual TEUs exceeded 4-week average by >10% — potential short-term congestion risk.")
-        if latest["actual_teus"] < df["rolling_4w_actual"].iloc[-2] * 0.90:
-            flags.append("Actual TEUs fell >10% below 4-week average — potential easing of congestion.")
-
-    if flags:
-        st.subheader("Risk/Opportunity Signals")
-        for f in flags:
-            st.write(f"- {f}")
-    else:
-        st.info("No notable risk flags based on current simple rules.")
-
-# ---------- Trends ----------
 with tab_trends:
-    st.subheader("Rolling View of Inbound Volumes")
-    lookback_weeks = st.slider("Show last N weeks", min_value=12, max_value=min(104, len(df)), value=min(52, len(df)))
-    dff = df.tail(lookback_weeks).copy()
+    st.subheader("Total TEUs — Trend")
+    st.line_chart(df.set_index("month_dt")[["total_teus"]], height=300)
+    st.caption("Longer-term flow through LA; useful for planning rail/drayage and warehouse labor.")
 
-    st.line_chart(
-        dff.set_index("week")[["actual_teus", "rolling_4w_actual"]],
-        height=320
-    )
-    st.caption("Lines: Actual TEUs (weekly) and 4-week rolling average (smoother trend).")
+    comps = [c for c in ["imports_loaded","exports_loaded","empties"] if c in df.columns]
+    if comps:
+        st.subheader("Components — Imports / Exports / Empties")
+        st.line_chart(df.set_index("month_dt")[comps], height=320)
 
-# ---------- Forecast vs Actual ----------
-with tab_accuracy:
-    st.subheader("Forecast vs Actual (Weekly)")
-    dfa = df.copy()
-    dfa["forecast_error_teus"] = dfa["actual_teus"] - dfa["forecast_teus"]
-    dfa["forecast_error_pct"] = (dfa["forecast_error_teus"] / dfa["forecast_teus"]) * 100.0
+with tab_yoy:
+    st.subheader("Year-over-Year % Change — Total TEUs")
+    yoy = df.dropna(subset=["yoy_total_pct"]).copy()
+    st.bar_chart(yoy.set_index("month_dt")[["yoy_total_pct"]], height=320)
+    st.caption("YoY helps separate seasonality from real demand shifts.")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.line_chart(
-            dfa.set_index("week")[["forecast_teus", "actual_teus"]],
-            height=320
-        )
-        st.caption("Weekly forecast vs actual TEUs.")
+with tab_mix:
+    if all(c in df.columns for c in ["imports_loaded_share_pct","exports_loaded_share_pct","empties_share_pct"]):
+        mix = df.set_index("month_dt")[["imports_loaded_share_pct","exports_loaded_share_pct","empties_share_pct"]].copy()
+        st.subheader("Mix of TEUs (%)")
+        st.area_chart(mix, height=320)
+        st.caption("Mix shifts can signal chassis repositioning needs, yard space mix, and empties management.")
+    # Simple volatility measure on total TEUs
+    st.subheader("3-month Rolling Volatility (Total TEUs)")
+    tmp = df[["month_dt","total_teus"]].copy()
+    tmp["returns"] = tmp["total_teus"].pct_change()
+    tmp["vol_3m"] = tmp["returns"].rolling(3).std() * np.sqrt(12) * 100  # annualized-ish %
+    st.line_chart(tmp.set_index("month_dt")[["vol_3m"]], height=280)
 
-    with c2:
-        st.bar_chart(
-            dfa.set_index("week")[["forecast_error_pct"]],
-            height=320
-        )
-        st.caption("Forecast error (%): positive = actual above forecast, negative = actual below forecast.")
-
-    # Summary stats
-    st.markdown("**Forecast Accuracy Summary**")
-    summary = pd.DataFrame({
-        "MAPE (%)": [dfa["forecast_error_pct"].abs().mean()],
-        "Bias (Mean Error, TEUs)": [dfa["forecast_error_teus"].mean()],
-        "RMSE (TEUs)": [np.sqrt((dfa["forecast_error_teus"]**2).mean())]
-    })
-    st.dataframe(summary.style.format({"MAPE (%)": "{:.1f}", "Bias (Mean Error, TEUs)": "{:,.0f}", "RMSE (TEUs)": "{:,.0f}"}), use_container_width=True)
-
-# ---------- WoW Heatmap ----------
-with tab_heatmap:
-    st.subheader("Week-over-Week Change Heatmap")
-    heat = df[["year", "iso_week", "wow_actual_change_pct"]].dropna().copy()
-
-    # Pivot to year x week for a matrix-like view
-    pivot = heat.pivot(index="year", columns="iso_week", values="wow_actual_change_pct").sort_index(ascending=False)
-    st.dataframe(
-        pivot.style.background_gradient(cmap="RdYlGn").format("{:.0f}%").set_precision(0),
-        use_container_width=True
-    )
-    st.caption("Cells show % change in actual TEUs vs prior week (Red = drop, Green = increase).")
-
-# ---------- Data Table ----------
 with tab_table:
     st.subheader("Raw & Derived Data")
-    show_cols = ["week", "forecast_teus", "actual_teus", "pct_diff", "wow_actual_change_pct", "rolling_4w_actual", "yoy_actual_change_pct"]
-    show_cols = [c for c in show_cols if c in df.columns]
-    st.dataframe(
-        df[show_cols].rename(columns={
-            "week": "Week",
-            "forecast_teus": "Forecast TEUs",
-            "actual_teus": "Actual TEUs",
-            "pct_diff": "% Difference (Site)",
-            "wow_actual_change_pct": "WoW Change (%)",
-            "rolling_4w_actual": "4W Rolling Avg (TEUs)",
-            "yoy_actual_change_pct": "YoY Change (%)"
-        }).style.format({
-            "Forecast TEUs": "{:,.0f}",
-            "Actual TEUs": "{:,.0f}",
-            "% Difference (Site)": "{:.1f}",
-            "WoW Change (%)": "{:.1f}",
-            "4W Rolling Avg (TEUs)": "{:,.0f}",
-            "YoY Change (%)": "{:.1f}",
-        }),
-        use_container_width=True
-    )
+    show = df.copy()
+    # prettier names
+    rename = {
+        "month_dt":"Month",
+        "imports_loaded":"Loaded Imports",
+        "exports_loaded":"Loaded Exports",
+        "empties":"Empties",
+        "total_teus":"Total TEUs",
+        "mom_total_pct":"MoM Total (%)",
+        "yoy_total_pct":"YoY Total (%)",
+        "imports_loaded_share_pct":"Imports Share (%)",
+        "exports_loaded_share_pct":"Exports Share (%)",
+        "empties_share_pct":"Empties Share (%)",
+    }
+    for k,v in rename.items():
+        if k in show.columns: show = show.rename(columns={k:v})
+    fmt = {c:"{:,.0f}" for c in ["Loaded Imports","Loaded Exports","Empties","Total TEUs"] if c in show.columns}
+    fmt.update({c:"{:.1f}%" for c in ["MoM Total (%)","YoY Total (%)","Imports Share (%)","Exports Share (%)","Empties Share (%)"] if c in show.columns})
+    st.dataframe(show.set_index("Month").style.format(fmt), use_container_width=True)
 
-# -------------------------------
-# Section: Analysis & Implications
-# -------------------------------
+# ---------- Analysis & Implications ----------
 st.markdown("---")
 st.header("Analysis & Implications")
 
-# Generate concise narrative
-latest_week = df["week"].iloc[-1].date().isoformat()
-latest_actual = df["actual_teus"].iloc[-1]
-prev_actual = df["actual_teus"].iloc[-2] if len(df) >= 2 else latest_actual
-wow = (latest_actual - prev_actual) / prev_actual * 100 if prev_actual else np.nan
-rolling = df["rolling_4w_actual"].iloc[-1]
-
+latest_m = df.iloc[-1]
+prev_m = df.iloc[-2] if len(df)>=2 else latest_m
+mom = (latest_m["total_teus"]/prev_m["total_teus"]-1)*100 if prev_m["total_teus"] else np.nan
+yoy = latest_m["yoy_total_pct"]
 bullets = []
-if not pd.isna(wow):
-    if wow >= 5:
-        bullets.append(f"Inbound volume rose {wow:.1f}% week-over-week (week of {latest_week}). Prepare for near-term increases in drayage moves and yard turns.")
-    elif wow <= -5:
-        bullets.append(f"Inbound volume fell {wow:.1f}% week-over-week (week of {latest_week}). Expect short-term easing in yard utilization and chassis demand.")
+
+# MoM movement
+if pd.notna(mom):
+    if mom >= 5:
+        bullets.append(f"Total throughput **up {mom:.1f}% MoM** — expect **near-term increases** in drayage moves and yard turns.")
+    elif mom <= -5:
+        bullets.append(f"Total throughput **down {mom:.1f}% MoM** — look for **temporary easing** in warehouse labor and chassis demand.")
     else:
-        bullets.append(f"Inbound volume moved {wow:.1f}% WoW (week of {latest_week}), within a normal range.")
+        bullets.append(f"Throughput changed **{mom:.1f}% MoM**, within a normal band.")
 
-if latest_actual > rolling * 1.10:
-    bullets.append("Actual TEUs are >10% above the 4-week average — heightened risk of berth/yard congestion and overtime labor.")
-elif latest_actual < rolling * 0.90:
-    bullets.append("Actual TEUs are >10% below the 4-week average — opportunity to catch up on maintenance and reposition empties.")
+# YoY context
+if pd.notna(yoy):
+    if yoy > 0:
+        bullets.append(f"YoY growth **{yoy:.1f}%** indicates **stronger demand** vs last year; prepare for sustained capacity pressure.")
+    else:
+        bullets.append(f"YoY decline **{yoy:.1f}%** suggests **softer flow**; opportunity to catch up on maintenance and reposition empties.")
 
-bullets.append("Use rolling averages, not single weeks, to plan labor shifts and drayage capacity. Pair with inland rail and diesel price signals for a fuller picture.")
+# Mix implications
+parts = []
+for p, label in [("imports_loaded_share_pct","imports"),("exports_loaded_share_pct","exports"),("empties_share_pct","empties")]:
+    if p in df.columns: parts.append((label, latest_m[p]))
+if parts:
+    dom = max(parts, key=lambda x: x[1])
+    if dom[0] == "empties" and dom[1] > 30:
+        bullets.append("High **empties share** → coordinate return sweeps and inland repositioning to avoid yard congestion.")
+    if dom[0] == "imports" and dom[1] > 60:
+        bullets.append("Imports dominate the mix → plan for **more inbound drays** and **cross-dock labor** next month.")
+
+bullets.append("Pair this with **diesel prices** (cost signal) and **rail traffic** (inland flow) for a fuller demand picture.")
 
 st.markdown("\n".join([f"- {b}" for b in bullets]))
+st.caption("Source: Port of Los Angeles — Container Statistics (official). Latest month posted ~15th of each month.")
