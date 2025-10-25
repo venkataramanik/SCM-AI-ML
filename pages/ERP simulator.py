@@ -252,12 +252,13 @@ def run_step():
     """Executes the logic for the current step and increments the counter."""
     current_step = st.session_state.step
     
+    # LOG FIX: Diagnostic print to confirm logic before execution
+    log_message(f"Executing Step {current_step+1} logic (Internal Counter: {current_step})...", "DEBUG")
+
     # Execute logic based on the current step number
     if current_step == 0:
         # STEP 0: Configuration & Initialization
-        # Execute Sales Order Entry immediately on the 'Start' click to avoid double-click issue
         create_sales_order(quantity=st.session_state.initial_demand)
-        # VISUAL FIX: Enhanced log message to show the process is advancing
         log_message("Sales Order accepted and demand registered. Moving to Production Planning.", "SALES") 
     elif current_step == 1:
         # STEP 1: Run Production Planning (MRP)
@@ -278,6 +279,8 @@ def run_step():
     # Only increment if the simulation is not finished
     if current_step < len(STEPS) - 1:
         st.session_state.step += 1
+        # LOG FIX: Diagnostic print to confirm increment happened
+        log_message(f"Step counter successfully incremented to {st.session_state.step}.", "DEBUG")
     elif current_step == len(STEPS) - 1:
         log_message("ERP Simulation Cycle Complete. Scroll down for the Financial Report.", "INFO")
         st.session_state.step += 1 # Mark as finished
@@ -291,9 +294,11 @@ def main():
 
     # Initialize state (or reset if the button was clicked)
     initialize_state()
+    
+    # VISUAL FIX: Adding a visible confirmation of the current step counter
+    st.caption(f"**Internal Step Counter:** {st.session_state.step}") 
 
     # --- CONFIGURATION (Only visible at Step 0) ---
-    # VISUAL FIX: Configuration elements are only rendered when step == 0. They disappear after the first click.
     if st.session_state.step == 0:
         with st.container():
             st.subheader("Simulation Configuration")
@@ -324,25 +329,21 @@ def main():
     
     # --- Button Logic ---
     if current_step_index == 0:
-        # Button executes the logic for Configuration/SO Entry (Step 1)
         button_label = "Execute Step 1: Configuration & Sales Order Entry" 
     elif current_step_index < len(STEPS) - 1:
-        # Button executes the logic for the current step (Steps 2 through 5)
         button_label = f"Execute Step {current_step_index+1}: {STEPS[current_step_index]}"
     elif current_step_index == len(STEPS) - 1:
-        # The final action is generating the report (Step 6)
         button_label = "Execute Step 6: Generate Financial Report"
     else: # is_finished
         button_label = "Reset Simulation"
         col1.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
 
     if col2.button(button_label, use_container_width=True, type="primary"):
-        # The logic here is now correct because initialize_state() fully resets all session variables
         if is_finished:
-            # Reruns the entire script, calling initialize_state() which now resets everything
+            # Fully reset the state
             initialize_state()
         else:
-            # Run the current step's logic (which now includes SO entry for step 0)
+            # Run the current step's logic
             run_step()
             
     # --- METRICS DISPLAY ---
