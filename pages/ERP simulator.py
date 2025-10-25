@@ -335,10 +335,20 @@ def main():
     
     # 2. DEFENSIVE CHECK (Critical for preventing intermittent AttributeErrors on UI load)
     # Ensure all critical UI keys are present immediately before use.
+
     if 'metrics' not in st.session_state:
         st.session_state.metrics = {'demand': 0, 'revenue': 0, 'profit': 0}
+        
     if 'initial_demand' not in st.session_state:
         st.session_state.initial_demand = 15
+    
+    # NEW DEFENSIVE CHECK: Ensure 'inventory' key exists with its structure
+    if 'inventory' not in st.session_state:
+        st.session_state.inventory = {
+            'FG-CHAIR': {'type': 'Finished Goods', 'stock': 10, 'uom': 'EA', 'cost': 120.00},
+            'RM-WOOD': {'type': 'Raw Material', 'stock': 100, 'uom': 'PLANK', 'cost': 10.00},
+            'RM-SCREW': {'type': 'Raw Material', 'stock': 500, 'uom': 'UNIT', 'cost': 0.10}
+        }
 
         
     # --- CONFIGURATION (Only visible at Step 0) ---
