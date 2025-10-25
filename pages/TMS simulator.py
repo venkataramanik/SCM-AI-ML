@@ -1,33 +1,27 @@
-# app.py
-# TMS Step-by-Step Simulator (Cloud-safe, no emojis)
-# Orders → Rating → Load Planning → Tendering → Events → Invoice & Pay
+# app.py (or pages/TMS simulator.py)
+# TMS Step-by-Step Simulator (Robust lanes + no icons)
 
 import math, random, uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+from typing import List, Optional
 import pandas as pd
 import streamlit as st
 
-# ---------- Page config ----------
+# ---------------- Page config ----------------
 st.set_page_config(page_title="TMS Step-by-Step Simulator", layout="wide")
 
-# ---------- Utility ----------
+# ---------------- Utilities ------------------
 def gen_id(prefix):
     return "%s-%s" % (prefix, uuid.uuid4().hex[:8])
 
 def df(rows):
     return pd.DataFrame(rows)
 
-# ---------- Session state ----------
-DEFAULT_KEYS = ["orders","loads","events","invoices","pay","tenders","carriers","step"]
-for k in DEFAULT_KEYS:
-    if k not in st.session_state:
-        st.session_state[k] = None
-if st.session_state.step is None:
-    st.session_state.step = 0
+def normalize_code(s):
+    return (s or "").strip().upper()
 
-# ---------- Domain ----------
+# ---------------- Domain ---------------------
 @dataclass
 class Location:
     code: str
@@ -43,11 +37,18 @@ GEO = {
     "LAX": Location("LAX","Los Angeles, CA",33.94,-118.41),
     "DEN": Location("DEN","Denver, CO",39.86,-104.67),
     "SEA": Location("SEA","Seattle, WA",47.45,-122.31),
+    "MIA": Location("MIA","Miami, FL",25.80,-80.29),
+    "MEM": Location("MEM","Memphis, TN",35.15,-90.05),
 }
 
 def miles(a, b):
-    R = 3958.8
+    # SAFE lookup with clear error message instead of KeyError
+    a = normalize_code(a); b = normalize_code(b)
+    if a not in GEO or b not in GEO:
+        raise ValueError("Unknown code(s): origin=%r valid=%r, dest=%r valid=%r" %
+                         (a, a in GEO, b, b in GEO))
     A, B = GEO[a], GEO[b]
+    R = 3958.8
     lat1, lon1, lat2, lon2 = map(math.radians, [A.lat, A.lon, B.lat, B.lon])
     dlat, dlon = lat2 - lat1, lon2 - lon1
     h = math.sin(dlat/2.0)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2.0)**2
@@ -99,31 +100,97 @@ class PayDecision:
     decision: str
     note: str
 
-# ---------- Business logic ----------
-def make_orders():
-    lanes = [("ATL","JFK"),("ATL","ORD"),("DFW","LAX"),("ORD","DEN"),("DEN","SEA")]
-    now = datetime.now()
-    out = []
-    for o, d in lanes:
-        w = random.choice([60, 2000, 8000, 35000])  # parcel → LTL → TL candidates
-        out.append(Order(gen_id("ORD"), o, d, w, now + timedelta(days=random.randint(1,3))))
-    return out
+# ---------------- Session State --------------
+DEFAULT_KEYS = [
+    "orders","loads","events","invoices","pay","tenders",
+    "step","lanes_valid","lanes_rejected","seed"
+]
+for k in DEFAULT_KEYS:
+    if k not in st.session_state:
+        st.session_state[k] = None
+if st.session_state.step is None:
+    st.session_state.step = 0
+if st.session_state.seed is None:
+    st.session_state.seed = 11
 
+# ---------------- Sidebar Controls ----------
+st.sidebar.header("Controls")
+lanes_default = "ATL:JFK, ATL:ORD, DFW:LAX, ORD:DEN, DEN:SEA"
+lanes_str = st.sidebar.text_input("Lanes (origin:dest, comma separated)", value=lanes_default)
+st.sidebar.write("Known codes:", ", ".join(sorted(GEO.keys())))
+st.sidebar.write("Tip: codes are IATA-like and case-insensitive.")
+
+colb1, colb2, colb3 = st.sidebar.columns(3)
+with colb1:
+    if st.button("Next Step →"):
+        st.session_state.step = min(st.session_state.step + 1, 6)
+with colb2:
+    if st.button("Run All"):
+        st.session_state.step = 6
+with colb3:
+    if st.button("Reset"):
+        for k in DEFAULT_KEYS:
+            st.session_state[k] = None
+        st.session_state.step = 0
+        st.session_state.seed = 11
+        st.experimental_rerun()
+
+# ---------------- Parse Lanes Safely --------
+def parse_lanes(text):
+    valid = []
+    rejected = []
+    tokens = [t.strip() for t in (text or "").split(",") if t.strip()]
+    for tok in tokens:
+        if ":" not in tok:
+            rejected.append(tok); continue
+        o, d = tok.split(":", 1)
+        o, d = normalize_code(o), normalize_code(d)
+        if o in GEO and d in GEO:
+            valid.append((o, d))
+        else:
+            rejected.append(tok)
+    return valid, rejected
+
+lanes_valid, lanes_rejected = parse_lanes(lanes_str)
+st.session_state.lanes_valid = lanes_valid
+st.session_state.lanes_rejected = lanes_rejected
+
+if lanes_rejected:
+    st.warning("Ignored invalid lanes: %s" % ", ".join(lanes_rejected))
+
+if not lanes_valid:
+    st.error("No valid lanes. Please fix the lanes field in the sidebar.")
+    st.stop()
+
+# ---------------- Business Logic ------------
 def choose_mode(weight_lb):
     if weight_lb <= 70: return "PARCEL"
     if weight_lb <= 10000: return "LTL"
     return "TL"
 
+def make_orders(lanes, seed):
+    random.seed(seed)
+    now = datetime.now()
+    out = []
+    for o, d in lanes:
+        w = random.choice([60, 2000, 8000, 35000])  # parcel→LTL→TL candidates
+        out.append(Order(gen_id("ORD"), o, d, w, now + timedelta(days=random.randint(1,3))))
+    return out
+
 def rate_order(o):
-    dist = miles(o.origin, o.destination)
+    # Fully safe: if distances fail, return a marked invalid load (and the UI will show it)
+    try:
+        dist = miles(o.origin, o.destination)
+    except ValueError as e:
+        return Load(gen_id("LOAD"), "INVALID", o.origin, o.destination, 0.0, 0.0, "INVALID", None)
     mode = choose_mode(o.weight_lb)
     if mode == "PARCEL":
         base = max(12.0, o.weight_lb * 1.1)
     elif mode == "LTL":
         base = max(95.0, (o.weight_lb/100.0) * 32.0 * (1.0 + dist/2000.0))
     else:
-        base = max(600.0, dist * 2.10) + 50.0  # TL stop charge (simple)
-    total = round(base * 1.22, 2)  # add fuel surcharge
+        base = max(600.0, dist * 2.10) + 50.0
+    total = round(base * 1.22, 2)  # fuel surcharge
     return Load(gen_id("LOAD"), mode, o.origin, o.destination, round(dist, 0), total)
 
 def tender(loads):
@@ -133,12 +200,12 @@ def tender(loads):
         Carrier("RoadRunner",  ["TL"],     0.60, 0.92)
     ]
     for ld in loads:
+        if ld.mode not in ("PARCEL","LTL","TL"):
+            ld.tender = "INVALID"; continue
         options = [c for c in carriers if ld.mode in c.modes]
-        # deterministic-ish order for stability
         options.sort(key=lambda c: (-c.appetite, c.cost_factor, c.name))
         accepted = False
         for c in options:
-            # simple acceptance based on appetite
             if random.random() < c.appetite:
                 ld.tender = "ACCEPTED"
                 ld.carrier = c.name
@@ -182,77 +249,65 @@ def paymatch(loads, invoices, tol_pct=0.02, tol_abs=10.0):
                 out.append(PayDecision(inv.load_id, expected, inv.total, "APPROVED", "Underrun; approve"))
     return out
 
-# ---------- UI ----------
-st.title("TMS Step-by-Step Simulator (No Icons)")
+# ---------------- Header --------------------
+st.title("TMS Step-by-Step Simulator")
 st.write(
-    "Watch freight flow digitally through a TMS:\n"
+    "Watch freight flow through a TMS: "
     "1) Order Capture → 2) Rating & Mode → 3) Load Planning → 4) Tendering → 5) Events → 6) Invoice & 3-Way Match.\n"
-    "Use the Next Step button to proceed."
+    "Use the sidebar buttons to step or run all."
 )
 
-c1, c2 = st.columns([1,1])
-with c1:
-    if st.button("Next Step →"):
-        st.session_state.step = min(st.session_state.step + 1, 6)
-with c2:
-    if st.button("Reset"):
-        for k in DEFAULT_KEYS:
-            st.session_state[k] = None
-        st.session_state.step = 0
-        st.experimental_rerun()
-
+# ---------------- Steps ---------------------
 step = st.session_state.step
 
-# Step 1: Orders
+# Step 1
 if step >= 1:
     st.header("1) Order Capture")
-    st.info("Orders represent customer shipment requests with lanes, weights, and due dates.")
+    st.info("We create orders from your valid lanes input. Invalid lanes are ignored and won't break the app.")
     if st.session_state.orders is None:
-        random.seed(11)
-        st.session_state.orders = make_orders()
+        st.session_state.orders = make_orders(st.session_state.lanes_valid, st.session_state.seed)
     st.dataframe(df([asdict(o) for o in st.session_state.orders]), use_container_width=True)
 
-# Step 2: Rating
+# Step 2
 if step >= 2:
     st.header("2) Rating & Mode Selection")
-    st.info("Each order is priced by a feasible mode (Parcel/LTL/TL) using distance and weight.")
+    st.info("Each order is priced by a feasible mode (Parcel/LTL/TL) using distance and weight. Invalid lanes appear marked as INVALID.")
     if st.session_state.loads is None:
         st.session_state.loads = [rate_order(o) for o in st.session_state.orders]
     st.dataframe(df([asdict(l) for l in st.session_state.loads]), use_container_width=True)
 
-# Step 3: Load Planning
+# Step 3
 if step >= 3:
     st.header("3) Load Planning")
-    st.info("Orders become loads with an estimated cost and distance (direct moves for Parcel/LTL).")
+    st.info("Orders are now loads with estimated cost and distance (direct moves for this demo).")
     st.dataframe(df([asdict(l) for l in st.session_state.loads]), use_container_width=True)
 
-# Step 4: Tendering
+# Step 4
 if step >= 4:
     st.header("4) Tendering")
-    st.info("Loads are offered to eligible carriers; each may accept or decline.")
+    st.info("Loads are offered to eligible carriers; acceptance depends on appetite. INVALID loads are skipped.")
     if st.session_state.tenders is None:
         st.session_state.loads = tender(st.session_state.loads)
         st.session_state.tenders = True
     st.dataframe(df([asdict(l) for l in st.session_state.loads]), use_container_width=True)
 
-# Step 5: Events
+# Step 5
 if step >= 5:
     st.header("5) Shipment Events")
-    st.info("We simulate pickup (PU) and delivery (DEL) for accepted loads.")
+    st.info("For accepted loads, we simulate pickup (PU) and delivery (DEL).")
     if st.session_state.events is None:
         st.session_state.events = make_events(st.session_state.loads)
     st.dataframe(df([asdict(e) for e in st.session_state.events]), use_container_width=True)
 
-# Step 6: Invoice & Pay
+# Step 6
 if step >= 6:
     st.header("6) Invoice & Freight Pay")
-    st.info("Carriers send invoices; we match to plan and approve or short-pay using tolerance rules.")
+    st.info("We compare invoices to planned cost and approve or short-pay within tolerances.")
     if st.session_state.invoices is None:
         st.session_state.invoices = make_invoices(st.session_state.loads)
         st.session_state.pay = paymatch(st.session_state.loads, st.session_state.invoices)
-    st.subheader("Invoices vs Expected (Decision)")
+    st.subheader("Pay Decisions")
     st.dataframe(df([asdict(p) for p in st.session_state.pay]), use_container_width=True)
 
 st.markdown("---")
-st.caption("TMS Simulation • Streamlit app • Plain Python • No icons/emojis")
-
+st.caption("TMS Simulation • Streamlit app • Robust lane handling")
