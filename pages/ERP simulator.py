@@ -19,7 +19,7 @@ BOM = {
 # Define the sequential steps
 STEPS = [
     "Initialize System",
-    "Sales Order Entry (Demand: 15 Chairs)",
+    "Sales Order Entry (Customer Demand)", # Updated step label
     "Run Production Planning (MRP)",
     "Execute Procurement (PO & Receipt)",
     "Manufacturing Execution (Consume RM & Produce FG)",
@@ -30,22 +30,26 @@ STEPS = [
 # --- 2. STATE INITIALIZATION ---
 
 def initialize_state():
-    """Sets up the initial state in Streamlit's session_state."""
-    if 'step' not in st.session_state:
-        st.session_state.step = 0
-        st.session_state.inventory = {
-            'FG-CHAIR': {'type': 'Finished Goods', 'stock': 10, 'uom': 'EA', 'cost': 120.00},
-            'RM-WOOD': {'type': 'Raw Material', 'stock': 100, 'uom': 'PLANK', 'cost': 10.00},
-            'RM-SCREW': {'type': 'Raw Material', 'stock': 500, 'uom': 'UNIT', 'cost': 0.10}
-        }
-        st.session_state.ledger = pd.DataFrame(columns=['timestamp', 'type', 'amount', 'related_id', 'details'])
-        st.session_state.sales_orders = []
-        st.session_state.purchase_orders = []
-        st.session_state.production_orders = []
-        st.session_state.log = ["System Initialized. Click 'Next Step' to begin the ERP cycle."]
-        st.session_state.main_so_id = None
-        st.session_state.main_prod_order = None
-        st.session_state.metrics = {'demand': 0, 'revenue': 0, 'profit': 0}
+    """Sets up or resets the initial state in Streamlit's session_state."""
+    # This function now unconditionally sets all state variables, acting as a reliable reset.
+    st.session_state.step = 0
+    st.session_state.inventory = {
+        'FG-CHAIR': {'type': 'Finished Goods', 'stock': 10, 'uom': 'EA', 'cost': 120.00},
+        'RM-WOOD': {'type': 'Raw Material', 'stock': 100, 'uom': 'PLANK', 'cost': 10.00},
+        'RM-SCREW': {'type': 'Raw Material', 'stock': 500, 'uom': 'UNIT', 'cost': 0.10}
+    }
+    st.session_state.ledger = pd.DataFrame(columns=['timestamp', 'type', 'amount', 'related_id', 'details'])
+    st.session_state.sales_orders = []
+    st.session_state.purchase_orders = []
+    st.session_state.production_orders = []
+    st.session_state.log = ["System Initialized. Click 'Next Step' to begin the ERP cycle."]
+    st.session_state.main_so_id = None
+    st.session_state.main_prod_order = None
+    st.session_state.metrics = {'demand': 0, 'revenue': 0, 'profit': 0}
+    
+    # Check if initial_demand exists, otherwise set default (used for configuration)
+    if 'initial_demand' not in st.session_state:
+        st.session_state.initial_demand = 15
 
 def log_transaction(entry_type, amount, related_id, details=""):
     """Logs financial activity to the ledger."""
@@ -65,7 +69,7 @@ def log_message(message, module="INFO"):
 
 # --- 3. ERP LOGIC FUNCTIONS (Adapted for Session State) ---
 
-def create_sales_order(quantity=15):
+def create_sales_order(quantity):
     """Creates a new customer order."""
     order_id = f"SO-{uuid.uuid4().hex[:6]}"
     order = {
@@ -248,7 +252,8 @@ def run_step():
     
     # Execute logic based on the current step number
     if current_step == 1:
-        create_sales_order(quantity=15)
+        # Now uses the configured demand quantity
+        create_sales_order(quantity=st.session_state.initial_demand)
     elif current_step == 2:
         run_mrp()
     elif current_step == 3:
@@ -274,7 +279,22 @@ def main():
     st.title("Custom Chair Manufacturing ERP Simulator")
     st.markdown("Execute the full **Order-to-Cash** and **Procure-to-Pay** cycle step-by-step.")
 
+    # Initialize state (or reset if the button was clicked)
     initialize_state()
+
+    # --- CONFIGURATION (Only visible at Step 0) ---
+    if st.session_state.step == 0:
+        st.subheader("Simulation Configuration")
+        # The sales order quantity is now user-defined here
+        st.session_state.initial_demand = st.number_input(
+            "Initial Sales Order (SO) Demand Quantity (Chairs)",
+            min_value=1,
+            max_value=100,
+            value=st.session_state.initial_demand,
+            step=5,
+            help="This is the customer order that triggers the entire ERP cycle."
+        )
+        st.info(f"The simulation will start with an initial inventory of **10 FG-CHAIRS**.")
 
     # --- CONTROL AND STATUS BAR ---
     col1, col2 = st.columns([3, 1])
@@ -292,14 +312,15 @@ def main():
     button_label = "Run " + STEPS[current_step_index+1] if current_step_index < len(STEPS) - 1 else "Generate Final Report"
     
     if current_step_index == 0:
-        button_label = "Start Simulation (Run Step 1)"
+        button_label = "Start Simulation (Run Step 1: SO Entry)"
     elif is_finished:
         button_label = "Reset Simulation"
-        col1.info("The full ERP cycle has been executed.")
+        col1.info("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
 
     if col2.button(button_label, use_container_width=True, type="primary"):
+        # The logic here is now correct because initialize_state() fully resets all session variables
         if is_finished:
-            # Reset
+            # Reruns the entire script, calling initialize_state() which now resets everything
             initialize_state()
         else:
             # Run the next step
