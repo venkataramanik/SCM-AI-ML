@@ -332,6 +332,10 @@ def main():
         if 'reset_flag' in st.session_state:
             del st.session_state.reset_flag # Clear the flag immediately after reset
     
+    # CRITICAL FIX for AttributeError: Ensure initial_demand is set before the UI reads it
+    if 'initial_demand' not in st.session_state:
+        st.session_state.initial_demand = 15
+        
     # --- CONFIGURATION (Only visible at Step 0) ---
     if st.session_state.step == 0:
         with st.container():
