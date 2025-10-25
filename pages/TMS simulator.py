@@ -511,8 +511,11 @@ class TMS:
         else:
              variance_pc = (invoice['variance_amount'] / invoice['planned_cost']) * 100
         
-        print(f"\n[PAY] Processing Invoice {invoice_id}...")
-        print(f"      Variance: ${invoice['variance_amount']:,.2f} ({variance_pc:+.2f}%)")
+        # Use simple formatting for robustness, using the mandatory sign '+'.
+        variance_amount_safe = round(invoice['variance_amount'], 2)
+        
+        # FIX: Simplified print format for variance amount for robustness
+        print(f"      Variance: ${variance_amount_safe:+.2f} ({variance_pc:+.2f}%)")
         
         # Financial rule: auto-pay if variance is less than 3%
         if abs(variance_pc) <= 3:
@@ -564,11 +567,11 @@ class TMS:
             total_variance_safe = round(total_variance, 2)
             variance_pc_safe = round(variance_pc, 2)
 
-            # NOTE: Using only the basic '.2f' or '+.2f' formatting to avoid the locale issues
-            # caused by the non-standard '+, .2f' specifier.
+            # NOTE: Using the standard ',.2f' for total planned cost (with comma).
             print(f"2. Total Planned Cost: ${total_planned_cost_safe:,.2f}")
             
-            # FIX applied here: Changed problematic format specifier to the safe '+.2f'
+            # CRITICAL FIX applied here: Changed problematic format specifier to the safe '+.2f'
+            # This eliminates the invalid '+, .2f' combination.
             print(f"3. Net Cost Variance: ${total_variance_safe:+.2f} ({variance_pc_safe:+.2f}%)")
         else:
             print("2-3. Cost Variance Analysis: No invoices processed yet.")
