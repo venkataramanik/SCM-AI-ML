@@ -505,7 +505,11 @@ class TMS:
 
         invoice = self.invoices[invoice_id]
         
-        variance_pc = (invoice['variance_amount'] / invoice['planned_cost']) * 100
+        # Need to protect division by zero here if planned_cost was 0, but it should be > 0
+        if invoice['planned_cost'] == 0:
+             variance_pc = 0.0
+        else:
+             variance_pc = (invoice['variance_amount'] / invoice['planned_cost']) * 100
         
         print(f"\n[PAY] Processing Invoice {invoice_id}...")
         print(f"      Variance: ${invoice['variance_amount']:,.2f} ({variance_pc:+.2f}%)")
@@ -555,14 +559,16 @@ class TMS:
             else:
                 variance_pc = 0.0
             
-            # Round variables for clean display
+            # Round variables for clean display and robustness
+            total_planned_cost_safe = round(total_planned_cost, 2)
             total_variance_safe = round(total_variance, 2)
             variance_pc_safe = round(variance_pc, 2)
 
-            print(f"2. Total Planned Cost: ${total_planned_cost:,.2f}")
+            # NOTE: Using only the basic '.2f' or '+.2f' formatting to avoid the locale issues
+            # caused by the non-standard '+, .2f' specifier.
+            print(f"2. Total Planned Cost: ${total_planned_cost_safe:,.2f}")
             
-            # FIX: Simplified f-string to use only the sign and 2 decimal places (+.2f),
-            # removing the non-standard comma-grouping format that caused the ValueError.
+            # FIX applied here: Changed problematic format specifier to the safe '+.2f'
             print(f"3. Net Cost Variance: ${total_variance_safe:+.2f} ({variance_pc_safe:+.2f}%)")
         else:
             print("2-3. Cost Variance Analysis: No invoices processed yet.")
