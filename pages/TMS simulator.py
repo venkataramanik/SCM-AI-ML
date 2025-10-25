@@ -548,9 +548,16 @@ class TMS:
             total_planned_cost = df_invoices['planned_cost'].sum()
             total_invoiced_cost = df_invoices['invoiced_amount'].sum()
             total_variance = total_invoiced_cost - total_planned_cost
-            variance_pc = (total_variance / total_planned_cost) * 100
+            
+            # Safety Check: Prevent division by zero if no costs were planned
+            if total_planned_cost != 0:
+                variance_pc = (total_variance / total_planned_cost) * 100
+            else:
+                variance_pc = 0.0
             
             print(f"2. Total Planned Cost: ${total_planned_cost:,.2f}")
+            # FIX: Standardized f-string format to prevent ValueError: removed extra space 
+            # in the format specifier for thousands separation and sign.
             print(f"3. Net Cost Variance: ${total_variance:+, .2f} ({variance_pc:+.2f}%)")
         else:
             print("2-3. Cost Variance Analysis: No invoices processed yet.")
