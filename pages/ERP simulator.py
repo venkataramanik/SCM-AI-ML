@@ -140,7 +140,8 @@ def execute_procurement():
     pending_pos = [po for po in st.session_state.purchase_orders if po['status'] == 'SENT_TO_SUPPLIER']
     
     if not pending_pos:
-        log_message("No Purchase Orders were pending for receipt.", "PROCUREMENT")
+        # LOGGING IMPROVEMENT: Clearly state that the check was performed and no action was needed.
+        log_message("Procurement Check: No Purchase Orders were pending for receipt (Raw Materials are sufficient).", "PROCUREMENT")
         return
 
     for po in pending_pos:
@@ -311,7 +312,8 @@ def main():
     is_finished = current_step_index >= len(STEPS)
     
     if not is_finished:
-        current_step_label = STEPS[current_step_index]
+        # UI IMPROVEMENT: Show the step index
+        current_step_label = f"Step {current_step_index+1}/{len(STEPS)}: {STEPS[current_step_index]}"
     else:
         current_step_label = "Simulation Complete"
         
