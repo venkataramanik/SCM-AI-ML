@@ -274,8 +274,7 @@ def run_step():
     if current_step < len(STEPS):
         st.session_state.step += 1
     
-    # Force a rerun after state change to update all button states immediately
-    st.experimental_rerun()
+    # Note: st.experimental_rerun() was removed here to fix the reported AttributeError.
 
 
 # --- 5. STREAMLIT UI LAYOUT ---
@@ -315,13 +314,14 @@ def main():
         st.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
         if st.button("Reset Simulation", use_container_width=True, type="primary"):
             initialize_state()
-            st.experimental_rerun()
+            # Note: st.experimental_rerun() was removed here to fix the reported AttributeError.
     else:
         # Create columns for the steps (one for each step)
         cols = st.columns(len(STEPS))
 
         for i, step_name in enumerate(STEPS):
             with cols[i]:
+                # Using a placeholder for a new line to help with wrapping, though Streamlit buttons are usually single-line.
                 button_label = f"Step {i+1}:\n{step_name}"
                 
                 # Button is active ONLY if its index matches the current step index
