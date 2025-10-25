@@ -326,15 +326,20 @@ def main():
     st.title("Custom Chair Manufacturing ERP Simulator")
     st.markdown("Execute the full **Order-to-Cash** and **Procure-to-Pay** cycle step-by-step. Note the detailed material, manufacturing, and financial impact at each stage.")
 
+    # 1. Initialization/Reset Logic
     # Initialize state - if 'step' is missing or the reset flag is set, run initialization
     if 'step' not in st.session_state or st.session_state.get('reset_flag', False):
         initialize_state()
         if 'reset_flag' in st.session_state:
             del st.session_state.reset_flag # Clear the flag immediately after reset
     
-    # CRITICAL FIX for AttributeError: Ensure initial_demand is set before the UI reads it
+    # 2. DEFENSIVE CHECK (Critical for preventing intermittent AttributeErrors on UI load)
+    # Ensure all critical UI keys are present immediately before use.
+    if 'metrics' not in st.session_state:
+        st.session_state.metrics = {'demand': 0, 'revenue': 0, 'profit': 0}
     if 'initial_demand' not in st.session_state:
         st.session_state.initial_demand = 15
+
         
     # --- CONFIGURATION (Only visible at Step 0) ---
     if st.session_state.step == 0:
