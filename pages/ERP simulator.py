@@ -18,7 +18,7 @@ BOM = {
 
 # Define the sequential steps
 STEPS = [
-    "Configuration & Initialization", # Index 0: Executes SO Entry logic
+    "Configuration & Sales Order Entry", # Index 0
     "Run Production Planning (MRP)",  # Index 1
     "Execute Procurement (PO & Receipt)", # Index 2
     "Manufacturing Execution (Consume RM & Produce FG)", # Index 3
@@ -30,7 +30,6 @@ STEPS = [
 
 def initialize_state():
     """Sets up or resets the initial state in Streamlit's session_state."""
-    # This function now unconditionally sets all state variables, acting as a reliable reset.
     st.session_state.step = 0
     st.session_state.inventory = {
         'FG-CHAIR': {'type': 'Finished Goods', 'stock': 10, 'uom': 'EA', 'cost': 120.00},
@@ -41,7 +40,7 @@ def initialize_state():
     st.session_state.sales_orders = []
     st.session_state.purchase_orders = []
     st.session_state.production_orders = []
-    st.session_state.log = ["System Initialized. Configure the demand and click 'Start' to begin the ERP cycle."]
+    st.session_state.log = ["System Initialized. Configure the demand and click the first step to begin the ERP cycle."]
     st.session_state.main_so_id = None
     st.session_state.main_prod_order = None
     st.session_state.metrics = {'demand': 0, 'revenue': 0, 'profit': 0}
@@ -272,34 +271,23 @@ def run_step():
         generate_report()
     
     # Only increment if the simulation is not finished
-    if current_step < len(STEPS) - 1:
+    if current_step < len(STEPS):
         st.session_state.step += 1
-    elif current_step == len(STEPS) - 1:
-        log_message("ERP Simulation Cycle Complete. Scroll down for the Financial Report.", "INFO")
-        st.session_state.step += 1 # Mark as finished
-
-# --- 5. BUTTON HANDLER ---
-
-def handle_button_click():
-    """The dedicated callback function for the main action button."""
-    # Check if the cycle is finished (step counter is past the last step index)
-    if st.session_state.step > len(STEPS) - 1:
-        # If finished, reset the state
-        initialize_state()
-    else:
-        # Otherwise, run the logic for the current step and increment
-        run_step()
+    
+    # Force a rerun after state change to update all button states immediately
+    st.experimental_rerun()
 
 
-# --- 6. STREAMLIT UI LAYOUT ---
+# --- 5. STREAMLIT UI LAYOUT ---
 
 def main():
     st.set_page_config(layout="wide", page_title="ERP Simulator")
     st.title("Custom Chair Manufacturing ERP Simulator")
     st.markdown("Execute the full **Order-to-Cash** and **Procure-to-Pay** cycle step-by-step.")
 
-    # Initialize state (or reset if the button was clicked)
-    initialize_state()
+    # Initialize state
+    if 'step' not in st.session_state:
+        initialize_state()
     
     # --- CONFIGURATION (Only visible at Step 0) ---
     if st.session_state.step == 0:
@@ -317,42 +305,41 @@ def main():
             )
             st.info(f"The simulation will start with an initial inventory of **10 FG-CHAIRS**.")
 
-    # --- CONTROL AND STATUS BAR ---
-    col1, col2 = st.columns([3, 1])
-    
+    # --- STEPPER BUTTONS & RESET ---
     current_step_index = st.session_state.step
-    is_finished = current_step_index > len(STEPS) - 1 # Check if we are past the last step
-    
-    if not is_finished:
-        # Show the step index
-        # We access the list using the current_step_index (0-5)
-        current_step_label = f"Step {current_step_index+1}/{len(STEPS)}: {STEPS[current_step_index]}"
-    else:
-        current_step_label = "Simulation Complete"
-        
-    # The header shows the current step index correctly
-    col1.subheader(f"Current Process Step: {current_step_label}")
-    
-    # --- Button Logic ---
-    if current_step_index == 0:
-        button_label = "Execute Step 1: Configuration & Sales Order Entry" 
-    elif current_step_index < len(STEPS):
-        # Current index is 1-5, which is steps 2-6
-        button_label = f"Execute Step {current_step_index+1}: {STEPS[current_step_index]}"
-    else: # is_finished (current_step_index is 6)
-        button_label = "Reset Simulation"
-        col1.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
+    is_finished = current_step_index > len(STEPS) - 1 # Check if we are past the last step (index 6)
 
-    # New implementation using the on_click callback
-    col2.button(
-        button_label, 
-        use_container_width=True, 
-        type="primary",
-        on_click=handle_button_click
-    )
+    st.subheader("ERP Process Flow (Click the Active Step to Execute)")
+    
+    if is_finished:
+        st.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
+        if st.button("Reset Simulation", use_container_width=True, type="primary"):
+            initialize_state()
+            st.experimental_rerun()
+    else:
+        # Create columns for the steps (one for each step)
+        cols = st.columns(len(STEPS))
+
+        for i, step_name in enumerate(STEPS):
+            with cols[i]:
+                button_label = f"Step {i+1}:\n{step_name}"
+                
+                # Button is active ONLY if its index matches the current step index
+                is_active_step = (i == current_step_index)
+                
+                # Render the button
+                st.button(
+                    button_label,
+                    key=f"step_btn_{i}",
+                    disabled=not is_active_step,
+                    # Primary type for active, secondary for others (dimmed/disabled)
+                    type="primary" if is_active_step else "secondary",
+                    on_click=run_step,
+                    use_container_width=True
+                )
+    st.markdown("---")
             
     # --- METRICS DISPLAY ---
-    st.markdown("---")
     colA, colB, colC, colD = st.columns(4)
     colA.metric("Demand", f"{st.session_state.metrics['demand']} Chairs")
     colB.metric("Chairs in Stock", f"{st.session_state.inventory['FG-CHAIR']['stock']} EA")
