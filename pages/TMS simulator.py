@@ -1,12 +1,13 @@
 # app.py
-# TMS Step-by-Step Simulator (Live Step Panel + Tabs)
-# - Big bold Next Step → (CSS)
-# - Live panel shows each stage as you advance
-# - Tabs for side-by-side drilldown (no scrolling)
-# - Parcel <=150, LTL <=19,000, else TL/IMDL (+ hub & spoke optional)
-# - TL consolidation (44k), multi-stop, sequential tender for TL/IMDL only
-# - Analytics dashboard (now schema-safe even with zero rows)
-# - Robust reset + session migration to avoid AttributeError
+# TMS Step-by-Step Simulator (robust version)
+# - Live Step Panel auto-shows each stage as you click Next
+# - Tabs (no scrolling) for drilldown
+# - Parcel <=150, LTL <=19,000, else TL/IMDL (intermodal optional)
+# - Hub & Spoke optional via MEM (or chosen hub)
+# - TL consolidation (44k), multi-stop, tendering for TL/IMDL only
+# - Analytics dashboard (schema-safe even when empty)
+# - Robust reset + session migration + safe getters
+# - ALWAYS builds orders by Step 1 and loads by Step 3 (handles None and [])
 
 import math, random, uuid
 from dataclasses import dataclass, asdict
@@ -56,7 +57,6 @@ def df_with_schema(rows: List[dict], columns: List[str]) -> pd.DataFrame:
     """Always return a DataFrame with the given columns, even if rows is empty."""
     if not rows:
         return pd.DataFrame({c: [] for c in columns})
-    # ensure missing keys become NaN rather than dropping the column
     df = pd.DataFrame(rows)
     for c in columns:
         if c not in df.columns:
@@ -300,55 +300,87 @@ with tc3:
         for k in list(st.session_state.keys()): del st.session_state[k]
         st.rerun()
 
-# ── Build data for current step ──────────────────────────────────
-if st.session_state.step >= 1 and st.session_state.orders is None:
+# ── Build data for current step (robust: handles None and []) ────
+# Step 1: Orders (create if None OR empty)
+if st.session_state.step >= 1 and (not st.session_state.orders):
     st.session_state.orders = make_orders(st.session_state.lanes_valid, int(st.session_state.seed))
 
-if st.session_state.step >= 3 and st.session_state.loads is None:
-    st.session_state.loads = build_loads(st.session_state.orders)
+# Step 3: Loads (build if None OR empty)
+if st.session_state.step >= 3 and (not st.session_state.loads):
+    st.session_state.loads = build_loads(st.session_state.orders or [])
 st.session_state.loads = ensure_load_defaults(st.session_state.loads)
 
+# Step 4: Tender
 if st.session_state.step >= 4 and st.session_state.tenders_log is None:
-    st.session_state.loads, st.session_state.tenders_log = sequential_tender(st.session_state.loads)
+    st.session_state.loads, st.session_state.tenders_log = sequential_tender(st.session_state.loads or [])
 st.session_state.loads = ensure_load_defaults(st.session_state.loads)
 
+# Step 5: Events
 if st.session_state.step >= 5 and st.session_state.events is None:
-    st.session_state.events = simulate_events(st.session_state.loads)
+    st.session_state.events = simulate_events(st.session_state.loads or [])
 
+# Step 6: Invoices & Pay
 if st.session_state.step >= 6 and (st.session_state.invoices is None or st.session_state.pay is None):
-    st.session_state.invoices = generate_invoices(st.session_state.loads)
-    st.session_state.pay = paymatch(st.session_state.loads, st.session_state.invoices)
+    st.session_state.invoices = generate_invoices(st.session_state.loads or [])
+    st.session_state.pay = paymatch(st.session_state.loads or [], st.session_state.invoices or [])
 
 # ── LIVE STEP PANEL ──────────────────────────────────────────────
 step = int(st.session_state.step or 0)
 step_titles = {0:"Ready",1:"Orders Created",2:"Rating & Mode",3:"Load Planning",4:"Tendering",5:"Shipment Events",6:"Invoice & Freight Pay"}
 st.subheader(f"Live Step Panel — {step_titles.get(step,'Ready')}")
+
 if step == 0:
     st.info("Click **Next Step →** to create Orders.")
+
 elif step == 1:
     st.success("Orders have been created.")
     rows=[{"order_id":o.order_id,"origin":o.origin,"destination":o.destination,"weight_lb":o.weight_lb,"due":o.due.strftime("%Y-%m-%d")} for o in (st.session_state.orders or [])]
     st.dataframe(pd.DataFrame(rows, columns=["order_id","origin","destination","weight_lb","due"]), use_container_width=True)
+
 elif step == 2:
-    if st.session_state.orders is None: st.info("Create orders first.")
-    else:
-        rows=[]
-        for o in st.session_state.orders:
-            try: d=miles(o.origin,o.destination)
-            except ValueError: d=0.0
-            m=choose_mode(o.weight_lb, d)
-            rows.append({"order_id":o.order_id,"lane":f"{o.origin}→{o.destination}","weight_lb":o.weight_lb,"miles":round(d,1),"mode":m})
-        st.success("Rating & mode suggestions:")
-        st.dataframe(pd.DataFrame(rows, columns=["order_id","lane","weight_lb","miles","mode"]), use_container_width=True)
+    if not (st.session_state.orders):
+        st.info("Creating orders..."); st.session_state.orders = make_orders(st.session_state.lanes_valid, int(st.session_state.seed))
+    rows=[]
+    for o in st.session_state.orders:
+        try: d=miles(o.origin,o.destination)
+        except ValueError: d=0.0
+        m=choose_mode(o.weight_lb, d)
+        rows.append({"order_id":o.order_id,"lane":f"{o.origin}→{o.destination}","weight_lb":o.weight_lb,"miles":round(d,1),"mode":m})
+    st.success("Rating & mode suggestions:")
+    st.dataframe(pd.DataFrame(rows, columns=["order_id","lane","weight_lb","miles","mode"]), use_container_width=True)
+
 elif step == 3:
+    # Ensure we have orders & loads; regenerate if missing/empty
+    if not (st.session_state.orders):
+        st.session_state.orders = make_orders(st.session_state.lanes_valid, int(st.session_state.seed))
+    if not (st.session_state.loads):
+        st.session_state.loads = build_loads(st.session_state.orders or [])
+        st.session_state.loads = ensure_load_defaults(st.session_state.loads)
+
     st.success("Loads planned (Parcel/LTL direct or hubbed; TL/IMDL consolidated multi-stop).")
-    rows=[{
-        "load_id":getf(ld,"load_id","-"),"mode":getf(ld,"mode","-"),
-        "stops":" → ".join(getf(ld,"stops",[])),
-        "miles":getf(ld,"miles",0.0),"est_total":getf(ld,"total_est",0.0),
-        "tender":getf(ld,"tender","-"),"carrier":(getf(ld,"carrier",None) or "-")
-    } for ld in (st.session_state.loads or [])]
-    st.dataframe(df_with_schema(rows, ["load_id","mode","stops","miles","est_total","tender","carrier"]), use_container_width=True)
+    if not st.session_state.loads:
+        st.warning("No loads were produced. This can happen if no valid lanes or orders exist.")
+        c1, c2 = st.columns([1,1])
+        with c1:
+            if st.button("Generate Sample Orders & Replan", key="regen_loads"):
+                st.session_state.orders = make_orders(st.session_state.lanes_valid, int(st.session_state.seed))
+                st.session_state.loads = build_loads(st.session_state.orders or [])
+                st.session_state.loads = ensure_load_defaults(st.session_state.loads)
+                st.experimental_rerun()
+        with c2:
+            st.write(f"Current lanes: {', '.join([f'{o}→{d}' for o,d in (st.session_state.lanes_valid or [])]) or '—'}")
+    else:
+        rows = [{
+            "load_id": getf(ld,"load_id","-"),
+            "mode": getf(ld,"mode","-"),
+            "stops": " → ".join(getf(ld,"stops",[])),
+            "miles": getf(ld,"miles",0.0),
+            "est_total": getf(ld,"total_est",0.0),
+            "tender": getf(ld,"tender","-"),
+            "carrier": (getf(ld,"carrier",None) or "-")
+        } for ld in st.session_state.loads]
+        st.dataframe(pd.DataFrame(rows, columns=["load_id","mode","stops","miles","est_total","tender","carrier"]), use_container_width=True)
+
 elif step == 4:
     st.success("Tendering completed for TL/IMDL (Parcel/LTL were auto-accepted).")
     rows=[{
@@ -357,10 +389,12 @@ elif step == 4:
         "attempts":getf(ld,"tender_attempts",0)
     } for ld in (st.session_state.loads or [])]
     st.dataframe(df_with_schema(rows, ["load_id","mode","tender","carrier","attempts"]), use_container_width=True)
+
 elif step == 5:
     st.success("Shipment events simulated.")
     ev = [asdict(e) for e in (st.session_state.events or [])]
     st.dataframe(df_with_schema(ev, ["load_id","code","detail","time"]), use_container_width=True)
+
 elif step == 6:
     st.success("Invoices generated and matched to plan.")
     pay_rows = [asdict(p) for p in (st.session_state.pay or [])]
@@ -385,14 +419,14 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Orders")
-    if st.session_state.orders is not None:
+    if st.session_state.orders:
         rows=[{"order_id":o.order_id,"origin":o.origin,"destination":o.destination,"weight_lb":o.weight_lb,"due":o.due.strftime("%Y-%m-%d")} for o in st.session_state.orders]
         st.dataframe(pd.DataFrame(rows, columns=["order_id","origin","destination","weight_lb","due"]), use_container_width=True)
     else: st.info("Click **Next Step →** to create orders.")
 
 with tabs[2]:
     st.subheader("Rating & Mode")
-    if st.session_state.orders is None: st.info("Create orders first.")
+    if not st.session_state.orders: st.info("Create orders first.")
     else:
         rows=[]
         for o in st.session_state.orders:
@@ -404,7 +438,15 @@ with tabs[2]:
 
 with tabs[3]:
     st.subheader("Load Planning")
-    if st.session_state.loads is not None:
+    if not st.session_state.loads:
+        st.info("No loads yet. Click **Next Step →** or use the button below.")
+        if st.button("Plan Loads Now", key="plan_now_tab"):
+            if not (st.session_state.orders):
+                st.session_state.orders = make_orders(st.session_state.lanes_valid, int(st.session_state.seed))
+            st.session_state.loads = build_loads(st.session_state.orders or [])
+            st.session_state.loads = ensure_load_defaults(st.session_state.loads)
+            st.experimental_rerun()
+    else:
         rows=[{
             "load_id":getf(ld,"load_id","-"),"mode":getf(ld,"mode","-"),
             "stops":" → ".join(getf(ld,"stops",[])),"miles":getf(ld,"miles",0.0),
@@ -414,7 +456,6 @@ with tabs[3]:
             "attempts":getf(ld,"tender_attempts",0)
         } for ld in st.session_state.loads]
         st.dataframe(df_with_schema(rows, ["load_id","mode","stops","miles","linehaul","fsc","access","est_total","tender","carrier","attempts"]), use_container_width=True)
-    else: st.info("Advance to Planning.")
 
 with tabs[4]:
     st.subheader("Tendering (TL/IMDL only)")
@@ -426,7 +467,7 @@ with tabs[4]:
             "load_id":getf(ld,"load_id","-"),"mode":getf(ld,"mode","-"),
             "tender":getf(ld,"tender","-"),"carrier":(getf(ld,"carrier",None) or "-"),
             "attempts":getf(ld,"tender_attempts",0)
-        } for ld in st.session_state.loads]
+        } for ld in (st.session_state.loads or [])]
         st.dataframe(df_with_schema(rows, ["load_id","mode","tender","carrier","attempts"]), use_container_width=True)
     else: st.info("Advance to tendering.")
 
@@ -457,15 +498,11 @@ with tabs[7]:
             "tender": getf(ld,"tender","-"),
             "carrier": (getf(ld,"carrier",None) or "-"),
             "attempts": getf(ld,"tender_attempts",0)
-        } for ld in st.session_state.loads]
-        # enforce schema so columns exist even if load_rows is empty
+        } for ld in (st.session_state.loads or [])]
         loads_df = df_with_schema(load_rows, ["load_id","mode","lane","stops","miles","total","tender","carrier","attempts"])
 
         # Tender performance (TL/IMDL)
-        if "mode" in loads_df.columns and not loads_df.empty:
-            tl_df = loads_df[loads_df["mode"].isin(["TL","IMDL"])]
-        else:
-            tl_df = pd.DataFrame({c: [] for c in loads_df.columns})
+        tl_df = loads_df[loads_df["mode"].isin(["TL","IMDL"])] if not loads_df.empty else pd.DataFrame({c: [] for c in loads_df.columns})
         accept_rate = 0.0 if tl_df.empty else (tl_df["tender"].eq("ACCEPTED").mean()*100.0)
         avg_attempts = 0.0 if tl_df.empty else float(tl_df["attempts"].mean())
 
@@ -475,20 +512,19 @@ with tabs[7]:
         c3.metric("Loads Planned", f"{len(loads_df)}")
 
         # Freight cost by lane
-        if not loads_df.empty:
-            cost_lane = loads_df.groupby("lane", as_index=False)["total"].sum().sort_values("total", ascending=False)
-        else:
-            cost_lane = pd.DataFrame({"lane":[], "total":[]})
+        cost_lane = loads_df.groupby("lane", as_index=False)["total"].sum().sort_values("total", ascending=False) if not loads_df.empty \
+                    else pd.DataFrame({"lane":[], "total":[]})
         st.write("Freight Cost by Lane (planned)")
         st.dataframe(df_with_schema(cost_lane.to_dict("records"), ["lane","total"]), use_container_width=True)
         if not cost_lane.empty: st.bar_chart(cost_lane.set_index("lane")["total"])
 
         # Cost per mode & cost/mile
-        if not loads_df.empty:
-            by_mode = loads_df.groupby("mode", as_index=False).agg(total=("total","sum"), miles=("miles","sum"))
+        by_mode = loads_df.groupby("mode", as_index=False).agg(total=("total","sum"), miles=("miles","sum")) if not loads_df.empty \
+                  else pd.DataFrame({"mode":[], "total":[], "miles":[]})
+        if not by_mode.empty:
             by_mode["cost_per_mile"] = by_mode.apply(lambda r: (r["total"]/r["miles"]) if r["miles"] else 0.0, axis=1)
         else:
-            by_mode = pd.DataFrame({"mode":[], "total":[], "miles":[], "cost_per_mile":[]})
+            by_mode["cost_per_mile"] = []
         st.write("Cost & Cost/Mile by Mode")
         st.dataframe(df_with_schema(by_mode.to_dict("records"), ["mode","total","miles","cost_per_mile"]), use_container_width=True)
         if not by_mode.empty: st.bar_chart(by_mode.set_index("mode")["total"])
