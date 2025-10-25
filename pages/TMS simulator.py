@@ -1,41 +1,42 @@
+
 """
-TRANSPORTATION MANAGEMENT SYSTEM (TMS) – END-TO-END SIMULATION
----------------------------------------------------------------
-
-This Python simulation demonstrates how a Transportation Management System (TMS)
-works across the full shipment lifecycle:
-
-1. ORDER CREATION – Capture customer demand (origin, destination, weight, due date)
-2. RATING & ROUTING – Select cost-effective mode (Parcel, LTL, TL) and route
-3. LOAD PLANNING – Group orders into efficient loads (direct or multi-stop)
-4. TENDERING – Offer loads to carriers and simulate accept/decline
-5. SHIPMENT EVENTS – Generate pickup, transit, and delivery events
-6. INVOICING & FREIGHT PAY – Generate carrier invoices and perform 3-way match
-
-Each section of code below is clearly labeled, with business explanations so viewers
-understand what’s happening and why. This is ideal for demo, teaching, or LinkedIn use.
-
-Author: Venkat Krishnan
+TMS STEP-BY-STEP SIMULATOR
+==========================
+What this does (end to end):
+1) Order Capture  -> Create customer shipment orders (origins, destinations, weights, due dates).
+2) Rating & Mode  -> Compute Parcel/LTL/TL costs and choose the best-feasible mode per order.
+3) Load Planning  -> Turn rated orders into loads (direct Parcel/LTL; TL can consolidate multi-stops).
+4) Tendering      -> Offer each load to eligible carriers; simulate accept/decline.
+5) Events         -> Generate shipment visibility events (PU, DEP/ARR, EXC, DEL).
+6) Invoice & Pay  -> Create carrier invoices and perform 3-way match (approve/short-pay).
+Each stage prints a plain-English explanation, then shows a compact result preview.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 import math, random, uuid
 
-# ===========================================================
-# SECTION 1: CORE DATA ENTITIES
-# ===========================================================
-"""
-This section defines the key business objects in a TMS:
-- Location: Where shipments start/end
-- Order: A customer shipment request
-- Carrier: A transportation provider
-- RateCard: How each mode is priced
-- Load: A planned, rated shipment ready to move
-- Tender, Event, Invoice, PayDecision: Represent operations, visibility, and billing
-"""
+# ---------- Pretty printing helpers ----------
+
+def line(char="─", n=72): return char * n
+def h1(text): print(f"\n{line('=')}\n{text}\n{line('=')}")
+def h2(text): print(f"\n{text}\n{line()}")
+def blurb(text): print(text.strip() + "\n")
+
+def show_rows(title: str, rows: List[Tuple], headers: Tuple[str,...], limit: int = 5):
+    print(f"{title}  (showing up to {limit})")
+    cols = list(headers)
+    widths = [max(len(str(h)), *(len(str(r[i])) for r in rows[:limit])) for i, h in enumerate(cols)]
+    fmt = " | ".join("{:<" + str(w) + "}" for w in widths)
+    print(fmt.format(*cols))
+    print("-+-".join("-" * w for w in widths))
+    for r in rows[:limit]:
+        print(fmt.format(*[str(x) for x in r]))
+    print()
+
+# ---------- Core data & utilities ----------
 
 def gen_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
@@ -59,10 +60,10 @@ GEO = {
     "MEM": Location("MEM", "Memphis, TN", 35.1495, -90.0490),
 }
 
-def haversine_miles(a: Location, b: Location) -> float:
-    """Approximate road miles between two points (for cost & ETA estimation)."""
+def miles(a: str, b: str) -> float:
+    A, B = GEO[a], GEO[b]
     R = 3958.8
-    lat1, lon1, lat2, lon2 = map(math.radians, [a.lat, a.lon, b.lat, b.lon])
+    lat1, lon1, lat2, lon2 = map(math.radians, [A.lat, A.lon, B.lat, B.lon])
     dlat, dlon = lat2 - lat1, lon2 - lon1
     h = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
     return 2 * R * math.asin(math.sqrt(h))
@@ -82,40 +83,47 @@ class Carrier:
     carrier_id: str
     name: str
     modes: List[str]
-    appetite: float
-    cost_factor: float
+    appetite: float  # 0..1
+    cost_factor: float  # internal cost vs tariff (~0.85-1.1)
 
 @dataclass
 class RateCard:
     parcel_rate_per_lb: float = 1.1
+    parcel_min: float = 12.0
     ltl_rate_per_cwt: float = 32.0
-    tl_rate_per_mile: float = 2.1
-    fuel_surcharge_pct: float = 0.22
+    ltl_min: float = 95.0
+    tl_rate_per_mile: float = 2.10
     tl_stop_charge: float = 50.0
+    tl_min: float = 600.0
+    fsc: float = 0.22  # fuel surcharge %
 
 @dataclass
 class Load:
     load_id: str
     mode: str
-    stops: List[str]
+    stops: List[str]              # simple: [orig, dest] (TL could be multi-stop in extensions)
     distance_mi: float
+    linehaul_est: float
+    fsc_est: float
+    accessorials_est: float
     total_est: float
     tender_status: str = "NOT_SENT"
     carrier_id: Optional[str] = None
+    carrier_name: Optional[str] = None
 
 @dataclass
 class Tender:
     tender_id: str
     load_id: str
     carrier_id: str
-    status: str
+    status: str  # SENT / ACCEPTED / DECLINED
 
 @dataclass
 class ShipmentEvent:
     event_id: str
     load_id: str
     timestamp: datetime
-    code: str
+    code: str     # PU / DEP / ARR / EXC / DEL
     detail: str
 
 @dataclass
@@ -129,172 +137,199 @@ class PayDecision:
     load_id: str
     expected: float
     invoiced: float
-    status: str
+    status: str    # APPROVED / SHORT_PAY
+    note: str
 
-# ===========================================================
-# SECTION 2: SAMPLE DATA GENERATION
-# ===========================================================
-"""
-Here we simulate a small shipping network: multiple customer orders,
-a few carriers, and realistic freight lanes (e.g., ATL → JFK).
-"""
+# ---------- Stage 1: Orders ----------
 
-def make_orders(now):
-    lanes = [("ATL", "JFK"), ("ATL", "ORD"), ("DFW", "LAX"), ("ORD", "DEN"), ("DEN", "SEA")]
-    orders = []
-    for o, d in lanes:
-        weight = random.choice([30, 2000, 8000, 35000])
-        ready = now
-        due = now + timedelta(days=random.choice([1,2,3]))
-        orders.append(Order(gen_id("ORD"), o, d, weight, ready, due))
+def build_orders(now: datetime) -> List[Order]:
+    random.seed(7)  # stable demo
+    lanes = [("ATL","JFK"),("ATL","ORD"),("DFW","LAX"),("ORD","DEN"),("DEN","SEA"),("JFK","MIA")]
+    orders: List[Order] = []
+    for (o,d) in lanes:
+        w = random.choice([30, 60, 1200, 4000, 9000, 35000])  # parcel → LTL → TL
+        ready = now + timedelta(hours=random.randint(0,6))
+        due = ready + timedelta(days=random.choice([1,2,3]))
+        orders.append(Order(gen_id("ORD"), o, d, w, ready, due))
     return orders
 
-def make_carriers():
-    return [
-        Carrier("C1", "SwiftParcel", ["PARCEL"], 0.8, 0.95),
-        Carrier("C2", "BlueFreight", ["LTL"], 0.7, 0.9),
-        Carrier("C3", "RoadRunner", ["TL"], 0.6, 0.92),
-        Carrier("C4", "OmniCarrier", ["PARCEL", "LTL", "TL"], 0.65, 0.97)
-    ]
+# ---------- Stage 2: Rating ----------
 
-# ===========================================================
-# SECTION 3: RATING & MODE SELECTION
-# ===========================================================
-"""
-Rates are estimated by mode:
-- Parcel: per-lb rate
-- LTL: per-100lb (CWT) rate
-- TL: per-mile with stop charges
-
-We choose mode based on weight thresholds to simulate optimization.
-"""
-
-def choose_mode(weight):
-    if weight <= 70: return "PARCEL"
-    if weight <= 10000: return "LTL"
+def choose_mode(weight_lb: float) -> str:
+    if weight_lb <= 70: return "PARCEL"
+    if weight_lb <= 10000: return "LTL"
     return "TL"
 
-def rate_order(order, rate):
-    dist = haversine_miles(GEO[order.origin], GEO[order.destination])
-    mode = choose_mode(order.weight_lb)
+def rate_order(o: Order, tariff: RateCard) -> Tuple[str, float, float, float, float]:
+    dist = miles(o.origin, o.destination)
+    mode = choose_mode(o.weight_lb)
     if mode == "PARCEL":
-        cost = max(12, order.weight_lb * rate.parcel_rate_per_lb)
+        base = max(tariff.parcel_min, o.weight_lb * tariff.parcel_rate_per_lb)
+        acc = 0.0
     elif mode == "LTL":
-        cwt = order.weight_lb / 100
-        cost = cwt * rate.ltl_rate_per_cwt * (1 + dist/2000)
+        cwt = o.weight_lb / 100.0
+        base = max(tariff.ltl_min, cwt * tariff.ltl_rate_per_cwt * (1 + dist/2000))
+        acc = 25.0 if o.weight_lb > 5000 else 0.0
     else:
-        cost = dist * rate.tl_rate_per_mile + rate.tl_stop_charge
-    total = cost * (1 + rate.fuel_surcharge_pct)
-    return mode, dist, round(total, 2)
+        base = max(tariff.tl_min, dist * tariff.tl_rate_per_mile) + tariff.tl_stop_charge
+        acc = 0.0
+    fsc = base * tariff.fsc
+    total = base + fsc + acc
+    return mode, dist, base, fsc, total
 
-# ===========================================================
-# SECTION 4: LOAD PLANNING & TENDERING
-# ===========================================================
-"""
-This step transforms rated orders into planned loads,
-then tenders them to carriers who may accept or decline.
-"""
+# ---------- Stage 3: Planning ----------
 
-def plan_loads(orders, rate):
-    loads = []
+def plan_loads(orders: List[Order], tariff: RateCard) -> List[Load]:
+    loads: List[Load] = []
     for o in orders:
-        mode, dist, total = rate_order(o, rate)
-        loads.append(Load(gen_id("LOAD"), mode, [o.origin, o.destination], dist, total))
+        mode, dist, base, fsc, total = rate_order(o, tariff)
+        loads.append(Load(gen_id("LOAD"), mode, [o.origin, o.destination], dist, round(base,2),
+                          round(fsc,2), 0.0, round(total,2)))
     return loads
 
-def tender_loads(loads, carriers):
-    tenders = []
+# ---------- Stage 4: Tender ----------
+
+def tender(loads: List[Load], carriers: List[Carrier]) -> List[Tender]:
+    tenders: List[Tender] = []
     for ld in loads:
-        options = [c for c in carriers if ld.mode in c.modes]
-        random.shuffle(options)
-        for c in options:
-            chance = c.appetite - (c.cost_factor - 0.9)
-            if random.random() < chance:
+        elig = [c for c in carriers if ld.mode in c.modes]
+        # rank by likely acceptance: higher appetite, lower cost_factor
+        elig.sort(key=lambda c: (-c.appetite, c.cost_factor))
+        accepted = False
+        for c in elig:
+            # Simple acceptance model: appetite adjusted by margin proxy
+            internal_cost = ld.total_est * c.cost_factor
+            margin = (ld.total_est - internal_cost) / max(1.0, internal_cost)
+            p = max(0.05, min(0.95, c.appetite * (0.4 + 0.6*(margin + 0.5))))
+            if random.random() < p:
                 ld.tender_status = "ACCEPTED"
-                ld.carrier_id = c.name
+                ld.carrier_id = c.carrier_id
+                ld.carrier_name = c.name
                 tenders.append(Tender(gen_id("TDR"), ld.load_id, c.carrier_id, "ACCEPTED"))
+                accepted = True
                 break
-        if ld.tender_status != "ACCEPTED":
+            else:
+                tenders.append(Tender(gen_id("TDR"), ld.load_id, c.carrier_id, "DECLINED"))
+        if not accepted:
             ld.tender_status = "EXPIRED"
     return tenders
 
-# ===========================================================
-# SECTION 5: SHIPMENT EVENTS
-# ===========================================================
-"""
-Simulate real-world tracking events like pickup, transit, and delivery.
-These would typically feed visibility dashboards or customer notifications.
-"""
+# ---------- Stage 5: Events ----------
 
-def simulate_events(loads):
-    events = []
-    now = datetime.now()
+def simulate_events(loads: List[Load], start: datetime) -> List[ShipmentEvent]:
+    evs: List[ShipmentEvent] = []
+    for ld in loads:
+        if ld.tender_status != "ACCEPTED":
+            continue
+        t = start + timedelta(hours=1)
+        evs.append(ShipmentEvent(gen_id("EVT"), ld.load_id, t, "PU", f"Picked up by {ld.carrier_name}"))
+        # depart origin
+        t += timedelta(hours=1)
+        evs.append(ShipmentEvent(gen_id("EVT"), ld.load_id, t, "DEP", f"Depart {ld.stops[0]}"))
+        # travel time proportional to distance (45 mph) + buffer
+        t += timedelta(hours=(ld.distance_mi / 45.0) + 1.0)
+        # possible small exception (10%)
+        if random.random() < 0.1:
+            evs.append(ShipmentEvent(gen_id("EVT"), ld.load_id, t, "EXC", "Traffic congestion"))
+            t += timedelta(hours=1)
+        evs.append(ShipmentEvent(gen_id("EVT"), ld.load_id, t, "ARR", f"Arrive {ld.stops[-1]}"))
+        t += timedelta(hours=1)
+        evs.append(ShipmentEvent(gen_id("EVT"), ld.load_id, t, "DEL", "Delivered, POD signed"))
+    return evs
+
+# ---------- Stage 6: Invoices & Pay ----------
+
+def generate_invoices(loads: List[Load], tariff: RateCard) -> List[Invoice]:
+    invs: List[Invoice] = []
     for ld in loads:
         if ld.tender_status != "ACCEPTED": continue
-        events.append(ShipmentEvent(gen_id("EVT"), ld.load_id, now, "PU", "Picked up"))
-        events.append(ShipmentEvent(gen_id("EVT"), ld.load_id, now + timedelta(hours=5), "ARR", "Arrived destination"))
-        events.append(ShipmentEvent(gen_id("EVT"), ld.load_id, now + timedelta(hours=6), "DEL", "Delivered"))
-    return events
+        linehaul = ld.linehaul_est * random.uniform(0.98, 1.02)
+        fsc = linehaul * tariff.fsc
+        acc = 0.0
+        total = round(linehaul + fsc + acc, 2)
+        invs.append(Invoice(gen_id("INV"), ld.load_id, total))
+    return invs
 
-# ===========================================================
-# SECTION 6: INVOICE & PAYMENT MATCH
-# ===========================================================
-"""
-Carriers submit invoices. We perform a 3-way match to ensure
-the billed amount is within acceptable tolerance of the planned cost.
-"""
-
-def create_invoices(loads):
-    invoices = []
-    for ld in loads:
-        if ld.tender_status != "ACCEPTED": continue
-        billed = ld.total_est * random.uniform(0.97, 1.05)
-        invoices.append(Invoice(gen_id("INV"), ld.load_id, round(billed, 2)))
-    return invoices
-
-def match_payments(loads, invoices):
-    results = []
+def match_pay(loads: List[Load], invoices: List[Invoice], tol_pct=0.02, tol_abs=10.0) -> List[PayDecision]:
     exp = {ld.load_id: ld.total_est for ld in loads}
+    decisions: List[PayDecision] = []
     for inv in invoices:
-        diff = inv.total - exp[inv.load_id]
-        status = "APPROVED" if abs(diff) < 10 else "SHORT_PAY"
-        results.append(PayDecision(inv.load_id, exp[inv.load_id], inv.total, status))
-    return results
+        expected = round(exp.get(inv.load_id, 0.0), 2)
+        diff = inv.total - expected
+        within = abs(diff) <= max(tol_abs, expected * tol_pct)
+        if within:
+            decisions.append(PayDecision(inv.load_id, expected, inv.total, "APPROVED", "Within tolerance"))
+        else:
+            note = "Over tolerance; short-pay excess" if diff > 0 else "Underrun; approve"
+            status = "SHORT_PAY" if diff > 0 else "APPROVED"
+            decisions.append(PayDecision(inv.load_id, expected, inv.total, status, note))
+    return decisions
 
-# ===========================================================
-# SECTION 7: END-TO-END DRIVER
-# ===========================================================
-"""
-This orchestrates the whole business process end-to-end:
-orders → rating → loads → tender → events → invoice → pay
-and prints summaries at each step.
-"""
+# ---------- Demo runner with section-by-section printing ----------
 
-def run_tms_demo():
-    print("\n🚚 TMS SIMULATION START")
+def run_demo():
+    random.seed(11)  # stable outputs
+    tariff = RateCard()
     now = datetime.now()
-    rate = RateCard()
-    orders = make_orders(now)
-    carriers = make_carriers()
 
-    print(f"✅ {len(orders)} orders created.")
-    loads = plan_loads(orders, rate)
-    print(f"📦 {len(loads)} loads planned (Parcel/LTL/TL).")
+    h1("END-TO-END TMS SIMULATION")
+    blurb("""
+    We will execute each process in sequence. For every section below, you'll see:
+    1) A short business explanation of what's happening
+    2) A compact printout of the key results for that stage
+    """)
 
-    tenders = tender_loads(loads, carriers)
-    print(f"📤 Tenders sent → {len([t for t in tenders if t.status=='ACCEPTED'])} accepted.")
+    # 1) Orders
+    h2("1) ORDER CAPTURE")
+    blurb("We create shipment orders with lane, weight, and due times. Good order data drives mode choice, cost, and on-time delivery.")
+    orders = build_orders(now)
+    rows = [(o.order_id, f"{o.origin}->{o.destination}", o.weight_lb, o.due_time.date()) for o in orders]
+    show_rows("Orders", rows, headers=("OrderID","Lane","Weight(lb)","DueDate"))
 
-    events = simulate_events(loads)
-    print(f"🛰️ {len(events)} tracking events generated.")
+    # 2) Rating & Mode
+    h2("2) RATING & MODE SELECTION (Parcel / LTL / TL)")
+    blurb("We compute an estimated charge per order and choose a feasible mode: small → Parcel, mid-weight → LTL, heavy → TL.")
+    rated = [(*rate_order(o, tariff), o.order_id) for o in orders]  # (mode, dist, base, fsc, total, order_id)
+    rows = [(oid, m, f"{d:.0f}", f"${t:.2f}") for (m,d,base,fsc,t,oid) in rated]
+    show_rows("Rated Orders", rows, headers=("OrderID","Mode","Miles","Est Total ($)"))
 
-    invoices = create_invoices(loads)
-    payments = match_payments(loads, invoices)
-    approved = len([p for p in payments if p.status=='APPROVED'])
-    print(f"💰 {approved} of {len(payments)} invoices auto-approved.\n")
+    # 3) Load Planning
+    h2("3) LOAD PLANNING")
+    blurb("We turn rated orders into executable loads. Parcel/LTL are direct. (TL consolidation/multi-stop can be added similarly.)")
+    loads = plan_loads(orders, tariff)
+    rows = [(ld.load_id, ld.mode, f"{ld.distance_mi:.0f}", f"${ld.total_est:.2f}") for ld in loads]
+    show_rows("Planned Loads", rows, headers=("LoadID","Mode","Miles","Est Total ($)"))
 
-    print("--- SAMPLE LOADS ---")
-    for ld in loads[:3]:
-        print(f"{ld.load_id} | {ld.mode} | {ld.tender_status} | ${ld.total_est:.2f}")
+    # 4) Tendering
+    h2("4) TENDERING (Send → Accept/Decline)")
+    blurb("We offer each load to eligible carriers. Acceptance reflects appetite and margin. If accepted, we assign the carrier.")
+    carriers = [
+        Carrier("C1","SwiftParcel",["PARCEL"],0.85,0.95),
+        Carrier("C2","BlueFreight",["LTL"],0.70,0.90),
+        Carrier("C3","RoadRunner",["TL"],0.55,0.92),
+        Carrier("C4","OmniCarrier",["PARCEL","LTL","TL"],0.65,0.97),
+    ]
+    tdrs = tender(loads, carriers)
+    rows = [(ld.load_id, ld.mode, ld.tender_status, (ld.carrier_name or "-")) for ld in loads]
+    show_rows("Tender Outcomes", rows, headers=("LoadID","Mode","Tender","Carrier"))
+
+    # 5) Shipment Events
+    h2("5) SHIPMENT EVENTS (Visibility)")
+    blurb("For accepted loads, we generate pickup (PU), depart/arrive (DEP/ARR), occasional exceptions (EXC), and delivery (DEL).")
+    events = simulate_events(loads, now)
+    rows = [(e.load_id, e.code, e.detail, e.timestamp.strftime("%Y-%m-%d %H:%M")) for e in events]
+    show_rows("Event Stream", rows, headers=("LoadID","Code","Detail","Time"))
+
+    # 6) Invoice & Pay
+    h2("6) INVOICE & FREIGHT PAY (3-Way Match)")
+    blurb("Carriers submit invoices. We compare to planned cost. If within ±2% or $10 tolerance → APPROVED; else SHORT_PAY or approve if underrun.")
+    invoices = generate_invoices(loads, tariff)
+    pays = match_pay(loads, invoices)
+    rows = [(p.load_id, f"${p.expected:.2f}", f"${p.invoiced:.2f}", p.status, p.note) for p in pays]
+    show_rows("Pay Decisions", rows, headers=("LoadID","Expected","Invoiced","Decision","Note"))
+
+    h1("SIMULATION COMPLETE")
+    blurb("You now saw each step: Orders → Rating → Planning → Tender → Events → Pay. Adjust tariffs, carriers, or lanes to explore different outcomes.")
 
 if __name__ == "__main__":
-    run_tms_demo()
+    run_demo()
