@@ -2,7 +2,8 @@
 # Port of Los Angeles "The Signal" dashboard (no tokens, no AI icon).
 # Sections:
 # 1) Data Source  2) What We Do With The Data  3) Analysis & Implications  4) Dashboards
-
+import os
+os.system("pip install -q html5lib lxml")
 import pandas as pd
 import numpy as np
 import streamlit as st
