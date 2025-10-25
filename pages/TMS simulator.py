@@ -1,14 +1,13 @@
 # app.py
-# TMS Step-by-Step Simulator
-# - Tabs (no endless scrolling)
+# TMS Step-by-Step Simulator (full version)
+# - Tabs (minimize scrolling)
 # - Big bold "Next Step →" button (CSS)
-# - Mode thresholds: Parcel<=150 lb, LTL<=19,000 lb, else TL/IMDL
-# - Hub & Spoke (optional, distance-benefit based)
-# - Multi-modal (IMDL) for long-haul when cheaper/threshold met
+# - Parcel <=150, LTL <=19,000, else TL/IMDL
+# - Hub & Spoke (optional) and Intermodal (IMDL) for long-haul
 # - Parcel/LTL auto-accept; TL/IMDL sequential tendering only
-# - TL consolidation (capacity-aware) + multi-stop sequencing
-# - Analytics dashboard (tender metrics & freight cost KPIs)
-# - Robust reset, safe lane parsing, state migration for new fields
+# - TL consolidation (44,000 lb) with multi-stop sequencing
+# - Analytics dashboard (tender metrics, cost per lane/mode, cost per mile, hub usage)
+# - Robust reset; safe lane parsing; session migration + safe getters to prevent AttributeError
 
 import math, random, uuid
 from dataclasses import dataclass, asdict
@@ -18,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────────────────
-# Page config + CSS (big bold buttons; tighter layout)
+# Page config + CSS (big bold buttons)
 # ─────────────────────────────────────────────────────────
 st.set_page_config(page_title="TMS Step-by-Step", layout="wide")
 st.markdown("""
@@ -35,27 +34,36 @@ st.markdown("""
 # ─────────────────────────────────────────────────────────
 # Utilities
 # ─────────────────────────────────────────────────────────
-def gen_id(prefix):
-    return "%s-%s" % (prefix, uuid.uuid4().hex[:8])
+def gen_id(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
-def df(rows):
+def df(rows: List[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
-def normalize_code(s):
+def normalize_code(s: str) -> str:
     return (s or "").strip().upper()
 
-# Ensure old session objects gain new attributes safely
 def ensure_load_defaults(loads):
+    """Backfill attributes so older session objects (or dicts) don't break rendering."""
+    fixed = []
     for ld in loads or []:
-        if not hasattr(ld, "tender_attempts"):
-            ld.tender_attempts = 0
-        if not hasattr(ld, "carrier"):
-            ld.carrier = None
-        if not hasattr(ld, "tender"):
-            ld.tender = "NOT_SENT"
-        if not hasattr(ld, "stops"):
-            ld.stops = []
-    return loads
+        if isinstance(ld, dict):
+            ld.setdefault("tender_attempts", 0)
+            ld.setdefault("carrier", None)
+            ld.setdefault("tender", "NOT_SENT")
+            ld.setdefault("stops", ld.get("stops", []))
+            fixed.append(ld)
+        else:
+            if not hasattr(ld, "tender_attempts"): ld.tender_attempts = 0
+            if not hasattr(ld, "carrier"): ld.carrier = None
+            if not hasattr(ld, "tender"): ld.tender = "NOT_SENT"
+            if not hasattr(ld, "stops"): ld.stops = []
+            fixed.append(ld)
+    return fixed
+
+def getf(obj, name, default=None):
+    """Safe getter for dataclass objects or dicts."""
+    return obj.get(name, default) if isinstance(obj, dict) else getattr(obj, name, default)
 
 # ─────────────────────────────────────────────────────────
 # Domain
@@ -79,10 +87,10 @@ GEO: Dict[str, Location] = {
     "MEM": Location("MEM","Memphis, TN",35.15,-90.05),  # hub option
 }
 
-def miles(a, b):
+def miles(a: str, b: str) -> float:
     a = normalize_code(a); b = normalize_code(b)
     if a not in GEO or b not in GEO:
-        raise ValueError("Unknown code(s): %s, %s" % (a, b))
+        raise ValueError(f"Unknown code(s): {a}, {b}")
     A, B = GEO[a], GEO[b]
     R = 3958.8
     lat1, lon1, lat2, lon2 = map(math.radians,[A.lat,A.lon,B.lat,B.lon])
@@ -186,8 +194,7 @@ with col_sb3:
             del st.session_state[k]
         st.rerun()
 
-# Parse lanes safely
-def parse_lanes(text):
+def parse_lanes(text: str) -> Tuple[List[Tuple[str,str]], List[str]]:
     valid, rejected = [], []
     tokens = [t.strip() for t in (text or "").split(",") if t.strip()]
     for tok in tokens:
@@ -212,19 +219,20 @@ if not lanes_valid:
 # ─────────────────────────────────────────────────────────
 # Mode thresholds per request:
 # Parcel <= 150 lb; LTL <= 19,000 lb; else TL/IMDL
-def choose_mode(weight_lb, dist_mi):
+def choose_mode(weight_lb: float, dist_mi: float) -> str:
     if weight_lb <= 150: return "PARCEL"
     if weight_lb <= 19000: return "LTL"
     if enable_intermodal and dist_mi >= imdl_mile_threshold:
         return "IMDL"
     return "TL"
 
-def make_orders(lanes, seed):
+def make_orders(lanes: List[Tuple[str,str]], seed: int) -> List[Order]:
     random.seed(seed)
     now = datetime.now()
-    out = []
+    out: List[Order] = []
     for o, d in lanes:
-        for _ in range(random.choice([1,2,3])):  # several orders per lane
+        # multiple orders per lane for consolidation and hubbing
+        for _ in range(random.choice([1,2,3])):
             w = random.choice([40, 120, 800, 5000, 12000, 18000, 24000, 30000, 38000])
             out.append(Order(gen_id("ORD"), o, d, w, now + timedelta(days=random.randint(1,3))))
     return out
@@ -253,18 +261,14 @@ def rate_imdl(dist, num_stops):
     acc = max(0, num_stops-2) * 15.0
     return base, fsc, acc, base + fsc + acc
 
-def nn_sequence(start, destinations):
-    seq = []
-    remaining = destinations[:]
-    curr = start
+def nn_sequence(start: str, destinations: List[str]) -> List[str]:
+    seq, remaining, curr = [], destinations[:], start
     while remaining:
         nxt = min(remaining, key=lambda x: miles(curr, x))
-        seq.append(nxt)
-        remaining.remove(nxt)
-        curr = nxt
+        seq.append(nxt); remaining.remove(nxt); curr = nxt
     return seq
 
-def maybe_hub_route(o, hub):
+def maybe_hub_route(o: Order, hub: str) -> Optional[List[str]]:
     if not enable_hub: return None
     try:
         direct = miles(o.origin, o.destination)
@@ -275,9 +279,9 @@ def maybe_hub_route(o, hub):
         return [o.origin, hub, o.destination]
     return None
 
-def build_loads(orders):
-    loads = []
-    # Parcel/LTL (direct or hubbed two-leg) — auto-accept
+def build_loads(orders: List[Order]) -> List[Load]:
+    loads: List[Load] = []
+    # Parcel/LTL (direct or hubbed) — auto-accept
     for o in orders:
         try:
             direct_dist = miles(o.origin, o.destination)
@@ -290,34 +294,25 @@ def build_loads(orders):
                 total_dist = 0.0; base=fsc=acc=tot=0.0
                 for a,b in zip(hubbed, hubbed[1:]):
                     d = miles(a,b); total_dist += d
-                    if mode == "PARCEL":
-                        b0,f0,a0,t0 = rate_parcel(o.weight_lb, d)
-                    else:
-                        b0,f0,a0,t0 = rate_ltl(o.weight_lb, d)
+                    if mode == "PARCEL": b0,f0,a0,t0 = rate_parcel(o.weight_lb, d)
+                    else:               b0,f0,a0,t0 = rate_ltl(o.weight_lb, d)
                     base+=b0; fsc+=f0; acc+=a0; tot+=t0
                 loads.append(Load(gen_id("LOAD"), mode, hubbed, round(total_dist,1),
                                   round(base,2), round(fsc,2), round(acc,2), round(tot,2),
                                   tender="ACCEPTED", carrier=("SwiftParcel" if mode=="PARCEL" else "BlueFreight")))
             else:
-                if mode == "PARCEL":
-                    base,fsc,acc,tot = rate_parcel(o.weight_lb, direct_dist)
-                else:
-                    base,fsc,acc,tot = rate_ltl(o.weight_lb, direct_dist)
+                if mode == "PARCEL": base,fsc,acc,tot = rate_parcel(o.weight_lb, direct_dist)
+                else:                 base,fsc,acc,tot = rate_ltl(o.weight_lb, direct_dist)
                 loads.append(Load(gen_id("LOAD"), mode, [o.origin,o.destination], round(direct_dist,1),
                                   round(base,2), round(fsc,2), round(acc,2), round(tot,2),
                                   tender="ACCEPTED", carrier=("SwiftParcel" if mode=="PARCEL" else "BlueFreight")))
-
-    # TL/IMDL consolidation: by origin, multi-stop, capacity ~44,000 lb
+    # TL/IMDL consolidation by origin (44,000 lb)
     tl_imdl_orders = []
     for o in orders:
-        dist_est = 0.0
-        try:
-            dist_est = miles(o.origin, o.destination)
-        except ValueError:
-            pass
-        m = choose_mode(o.weight_lb, dist_est)
-        if m in ("TL","IMDL"):
-            tl_imdl_orders.append(o)
+        try: d_est = miles(o.origin,o.destination)
+        except ValueError: d_est = 0.0
+        m = choose_mode(o.weight_lb, d_est)
+        if m in ("TL","IMDL"): tl_imdl_orders.append(o)
 
     by_origin: Dict[str, List[Order]] = {}
     for o in tl_imdl_orders:
@@ -327,9 +322,7 @@ def build_loads(orders):
     for origin, group in by_origin.items():
         remaining = sorted(group, key=lambda x: -x.weight_lb)
         while remaining:
-            batch = []
-            w_sum = 0.0
-            i=0
+            batch, w_sum, i = [], 0.0, 0
             while i < len(remaining):
                 if w_sum + remaining[i].weight_lb <= trailer_cap:
                     batch.append(remaining.pop(i)); w_sum += batch[-1].weight_lb
@@ -343,22 +336,20 @@ def build_loads(orders):
             total_dist = 0.0
             for a,b in zip(stops, stops[1:]):
                 total_dist += miles(a,b)
-            # choose between TL and IMDL by cost if intermodal enabled & long
+            # choose TL vs IMDL by cost if long-haul and IMDL enabled
             mode_choice = "TL"
             if enable_intermodal and total_dist >= imdl_mile_threshold:
                 bT,fT,aT,tT = rate_tl(total_dist, len(stops))
                 bI,fI,aI,tI = rate_imdl(total_dist, len(stops))
-                if tI < tT:
-                    base,fsc,acc,tot = bI,fI,aI,tI; mode_choice = "IMDL"
-                else:
-                    base,fsc,acc,tot = bT,fT,aT,tT
+                if tI < tT: base,fsc,acc,tot = bI,fI,aI,tI; mode_choice = "IMDL"
+                else:       base,fsc,acc,tot = bT,fT,aT,tT
             else:
                 base,fsc,acc,tot = rate_tl(total_dist, len(stops))
             loads.append(Load(gen_id("LOAD"), mode_choice, stops, round(total_dist,1),
                               round(base,2), round(fsc,2), round(acc,2), round(tot,2)))
     return loads
 
-def sequential_tender(loads):
+def sequential_tender(loads: List[Load]) -> Tuple[List[Load], List[dict]]:
     carriers = [
         Carrier("RoadRunner",  ["TL","IMDL"], 0.62, 0.92),
         Carrier("OmniCarrier", ["PARCEL","LTL","TL","IMDL"], 0.58, 0.97),
@@ -384,20 +375,20 @@ def sequential_tender(loads):
             ld.tender = "EXPIRED"
     return loads, tenders_log
 
-def simulate_events(loads):
-    out = []
+def simulate_events(loads: List[Load]) -> List[Event]:
+    out: List[Event] = []
     for ld in loads:
         if ld.tender != "ACCEPTED": continue
         t0 = datetime.now()
-        out.append(Event(ld.load_id, "PU", "Picked up by %s" % (ld.carrier or "-"), t0.strftime("%Y-%m-%d %H:%M")))
+        out.append(Event(ld.load_id, "PU", f"Picked up by {ld.carrier or '-'}", t0.strftime("%Y-%m-%d %H:%M")))
         for a,b in zip(ld.stops, ld.stops[1:]):
             t0 = t0 + timedelta(hours=1 + miles(a,b)/45.0)
-            out.append(Event(ld.load_id, "ARR", "Arrived %s" % b, t0.strftime("%Y-%m-%d %H:%M")))
+            out.append(Event(ld.load_id, "ARR", f"Arrived {b}", t0.strftime("%Y-%m-%d %H:%M")))
         out.append(Event(ld.load_id, "DEL", "Delivered, POD captured", (t0+timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M")))
     return out
 
-def generate_invoices(loads):
-    invs = []
+def generate_invoices(loads: List[Load]) -> List[Invoice]:
+    invs: List[Invoice] = []
     for ld in loads:
         if ld.tender != "ACCEPTED": continue
         linehaul = ld.linehaul_est * random.uniform(0.98, 1.02)
@@ -407,9 +398,9 @@ def generate_invoices(loads):
         invs.append(Invoice(ld.load_id, total))
     return invs
 
-def paymatch(loads, invoices, tol_pct=0.02, tol_abs=10.0):
+def paymatch(loads: List[Load], invoices: List[Invoice], tol_pct=0.02, tol_abs=10.0) -> List[PayDecision]:
     exp = {ld.load_id: ld.total_est for ld in loads}
-    out = []
+    out: List[PayDecision] = []
     for inv in invoices:
         expected = round(exp.get(inv.load_id, 0.0), 2)
         diff = inv.total - expected
@@ -423,7 +414,7 @@ def paymatch(loads, invoices, tol_pct=0.02, tol_abs=10.0):
     return out
 
 # ─────────────────────────────────────────────────────────
-# Header + top controls (always visible; bold via CSS)
+# Header + top controls (always visible)
 # ─────────────────────────────────────────────────────────
 st.title("TMS Step-by-Step Simulator")
 
@@ -470,8 +461,8 @@ with tabs[0]:
     st.subheader("What this simulation shows")
     st.write("""
 1) **Order Capture** → multiple orders per lane.  
-2) **Rating & Mode** → **Parcel ≤150 lb**, **LTL ≤19,000 lb**, else **TL/IMDL**; IMDL for long-haul when enabled.  
-3) **Planning** → Parcel/LTL direct **or** **Hub & Spoke**; **TL multi-stop** consolidation by origin with capacity.  
+2) **Rating & Mode** → **Parcel ≤150 lb**, **LTL ≤19,000 lb**, else **TL/IMDL** (IMDL for long-haul when enabled).  
+3) **Planning** → Parcel/LTL direct **or** **Hub & Spoke**; **TL multi-stop** consolidation by origin (≈44,000 lb).  
 4) **Tendering** → Parcel/LTL **auto-accept**; **TL/IMDL sequential tendering** only.  
 5) **Events** → PU, ARR per leg, DEL.  
 6) **Freight Pay** → Invoices vs plan with tolerances.  
@@ -495,12 +486,10 @@ with tabs[2]:
     else:
         rows=[]
         for o in st.session_state.orders:
-            try:
-                d = miles(o.origin,o.destination)
-            except ValueError:
-                d = 0.0
+            try: d = miles(o.origin,o.destination)
+            except ValueError: d = 0.0
             m = choose_mode(o.weight_lb, d)
-            rows.append({"order_id":o.order_id,"lane":"%s→%s"%(o.origin,o.destination),
+            rows.append({"order_id":o.order_id,"lane":f"{o.origin}→{o.destination}",
                          "weight_lb":o.weight_lb,"miles":round(d,1),"mode":m})
         st.dataframe(df(rows), use_container_width=True)
 
@@ -510,11 +499,17 @@ with tabs[3]:
         loads_view = []
         for ld in st.session_state.loads:
             loads_view.append({
-                "load_id": ld.load_id, "mode": ld.mode, "stops": " → ".join(ld.stops),
-                "miles": ld.miles, "linehaul_est": ld.linehaul_est, "fsc_est": ld.fsc_est,
-                "accessorials_est": ld.accessorials_est, "est_total": ld.total_est,
-                "tender": ld.tender, "carrier": (ld.carrier or "-"),
-                "tender_attempts": getattr(ld, "tender_attempts", 0)
+                "load_id":   getf(ld,"load_id","-"),
+                "mode":      getf(ld,"mode","-"),
+                "stops":     " → ".join(getf(ld,"stops",[])),
+                "miles":     getf(ld,"miles",0.0),
+                "linehaul":  getf(ld,"linehaul_est",0.0),
+                "fsc":       getf(ld,"fsc_est",0.0),
+                "access":    getf(ld,"accessorials_est",0.0),
+                "est_total": getf(ld,"total_est",0.0),
+                "tender":    getf(ld,"tender","-"),
+                "carrier":   (getf(ld,"carrier",None) or "-"),
+                "attempts":  getf(ld,"tender_attempts",0)
             })
         st.dataframe(df(loads_view), use_container_width=True)
     else:
@@ -527,8 +522,11 @@ with tabs[4]:
         st.dataframe(df(st.session_state.tenders_log), use_container_width=True)
         st.write("Current load statuses:")
         st.dataframe(df([{
-            "load_id": ld.load_id, "mode": ld.mode, "tender": ld.tender,
-            "carrier": (ld.carrier or "-"), "attempts": getattr(ld, "tender_attempts", 0)
+            "load_id": getf(ld,"load_id","-"),
+            "mode": getf(ld,"mode","-"),
+            "tender": getf(ld,"tender","-"),
+            "carrier": (getf(ld,"carrier",None) or "-"),
+            "attempts": getf(ld,"tender_attempts",0)
         } for ld in st.session_state.loads]), use_container_width=True)
     else:
         st.info("Advance to tendering.")
@@ -553,10 +551,16 @@ with tabs[7]:
         st.info("Run through planning/tender to populate analytics.")
     else:
         loads_df = df([{
-            "load_id": ld.load_id, "mode": ld.mode, "lane": "%s→%s"%(ld.stops[0], ld.stops[-1]) if ld.stops else "-",
-            "stops": " → ".join(ld.stops), "miles": ld.miles, "total": ld.total_est,
-            "tender": ld.tender, "carrier": (ld.carrier or "-"),
-            "attempts": getattr(ld, "tender_attempts", 0)
+            "load_id": getf(ld,"load_id","-"),
+            "mode": getf(ld,"mode","-"),
+            "lane": ("%s→%s" % (getf(ld,"stops",['-'])[0], getf(ld,"stops",['-'])[-1]))
+                    if getf(ld,"stops",[]) else "-",
+            "stops": " → ".join(getf(ld,"stops",[])),
+            "miles": getf(ld,"miles",0.0),
+            "total": getf(ld,"total_est",0.0),
+            "tender": getf(ld,"tender","-"),
+            "carrier": (getf(ld,"carrier",None) or "-"),
+            "attempts": getf(ld,"tender_attempts",0)
         } for ld in st.session_state.loads])
 
         # Tender performance (TL/IMDL)
@@ -566,11 +570,11 @@ with tabs[7]:
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("TL/IMDL Acceptance Rate", "%.1f%%" % accept_rate)
+            st.metric("TL/IMDL Acceptance Rate", f"{accept_rate:.1f}%")
         with c2:
-            st.metric("Avg Tender Attempts (TL/IMDL)", "%.2f" % avg_attempts)
+            st.metric("Avg Tender Attempts (TL/IMDL)", f"{avg_attempts:.2f}")
         with c3:
-            st.metric("Loads Planned", "%d" % len(loads_df))
+            st.metric("Loads Planned", f"{len(loads_df)}")
 
         # Freight cost per lane (planned)
         cost_lane = loads_df.groupby("lane", as_index=False)["total"].sum().sort_values("total", ascending=False)
@@ -587,7 +591,7 @@ with tabs[7]:
         if not by_mode.empty:
             st.bar_chart(by_mode.set_index("mode")["total"])
 
-        # Hub usage view (if hub present in routes)
+        # Hub usage (if hub in route)
         hub_usage = loads_df[loads_df["stops"].str.contains(hub_code, na=False)]
-        st.write("Hub Usage (%s) — loads flowing through hub" % hub_code)
+        st.write(f"Hub Usage ({hub_code}) — loads through hub")
         st.dataframe(hub_usage[["load_id","mode","stops","total"]], use_container_width=True)
