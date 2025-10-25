@@ -312,7 +312,7 @@ def main():
     is_finished = current_step_index >= len(STEPS)
     
     if not is_finished:
-        # UI IMPROVEMENT: Show the step index
+        # Show the step index
         current_step_label = f"Step {current_step_index+1}/{len(STEPS)}: {STEPS[current_step_index]}"
     else:
         current_step_label = "Simulation Complete"
@@ -321,12 +321,14 @@ def main():
     
     # --- Button Logic ---
     if current_step_index == 0:
-        button_label = "Start Simulation (Run Sales Order Entry)" # Clearer label
+        # Button executes the logic for Configuration/SO Entry (Step 1)
+        button_label = "Execute Step 1: Configuration & Sales Order Entry" 
     elif current_step_index < len(STEPS) - 1:
-        # Button label shows the next step the process is moving into
-        button_label = "Run " + STEPS[current_step_index+1] 
+        # Button executes the logic for the current step (Steps 2 through 5)
+        button_label = f"Execute Step {current_step_index+1}: {STEPS[current_step_index]}"
     elif current_step_index == len(STEPS) - 1:
-        button_label = "Generate Final Report"
+        # The final action is generating the report (Step 6)
+        button_label = "Execute Step 6: Generate Financial Report"
     else: # is_finished
         button_label = "Reset Simulation"
         col1.success("The full ERP cycle has been executed. Click 'Reset Simulation' to start over.")
