@@ -555,10 +555,15 @@ class TMS:
             else:
                 variance_pc = 0.0
             
+            # Round variables for clean display
+            total_variance_safe = round(total_variance, 2)
+            variance_pc_safe = round(variance_pc, 2)
+
             print(f"2. Total Planned Cost: ${total_planned_cost:,.2f}")
-            # FIX: Standardized f-string format to prevent ValueError: removed extra space 
-            # in the format specifier for thousands separation and sign.
-            print(f"3. Net Cost Variance: ${total_variance:+, .2f} ({variance_pc:+.2f}%)")
+            
+            # FIX: Simplified f-string to use only the sign and 2 decimal places (+.2f),
+            # removing the non-standard comma-grouping format that caused the ValueError.
+            print(f"3. Net Cost Variance: ${total_variance_safe:+.2f} ({variance_pc_safe:+.2f}%)")
         else:
             print("2-3. Cost Variance Analysis: No invoices processed yet.")
 
