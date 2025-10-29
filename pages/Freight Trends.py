@@ -20,7 +20,7 @@ st.markdown("""
 <p><strong>What:</strong> Monthly counts of <strong>trucks, rail containers, buses, passengers, and pedestrians</strong> entering the U.S. through land ports, plus a national <strong>Transportation Services Index (TSI)</strong> for freight & passenger activity.</p>
 <p><strong>Where the data comes from:</strong> Bureau of Transportation Statistics (BTS) open data on the U.S. DOT <strong>Socrata</strong> platform.</p>
 <p><strong>How we access it:</strong> Direct <strong>Socrata Open Data API (SoQL)</strong> calls — no manual downloads.</p>
-<p><strong>Why it matters:</strong> A fast signal for <strong>capacity, seasonality, and shocks</strong> in U.S. logistics — perfect for quick analytics and LinkedIn-ready visuals.</p>
+<p><strong>Why it matters:</strong> A fast signal for <strong>capacity, seasonality, and shocks</strong> in U.S. logistics — perfect for quick analytics.</p>
 </div>
 """, unsafe_allow_html=True)
 
