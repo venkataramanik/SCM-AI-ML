@@ -5,138 +5,169 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 import plotly.express as px
 
-# --- BUSINESS LOGIC & RATE ENGINE ---
-class RateEngine:
-    """Simulates True Parcel, LTL, and TL rate structures."""
-    
+# --- 1. RATE & BUSINESS LOGIC ENGINE ---
+class LogisticsEngine:
     @staticmethod
     def get_parcel_rate(weight):
-        # Base + Weight-based scaler (Simplified Zone logic)
-        return 12.50 + (weight * 0.85)
+        """Simulates base parcel rates + weight surcharges."""
+        return 15.0 + (weight * 0.45)
 
     @staticmethod
     def get_ltl_rate(weight, distance):
-        # SMC3-style simulation: Weight Class + Min Charge
-        if weight < 150: return RateEngine.get_parcel_rate(weight)
-        # Class 70 rate simulation
-        rate_per_cwt = (distance * 0.12) + 45.0 
-        cost = (weight / 100) * rate_per_cwt
-        return max(cost, 150.0) # $150 Minimum Charge
+        """Simulates LTL Class 70 rates with a $150 minimum."""
+        if weight < 150: return LogisticsEngine.get_parcel_rate(weight)
+        rate_cwt = (distance * 0.15) + 35.0 
+        return max((weight / 100) * rate_cwt, 150.0)
 
     @staticmethod
-    def get_tl_rate(distance):
-        # Flat equipment rate + Fuel surcharge
-        return 600 + (distance * 2.85)
+    def get_tl_base_cost(distance):
+        """Flat Truckload rate simulation."""
+        return 500 + (distance * 2.50)
 
-# --- OPTIMIZATION ENGINE ---
-def create_data_model(df, business_rules):
-    """Prepares data for OR-Tools."""
-    data = {}
-    # Simplified distance matrix (In a real app, use Google Maps API or Haversine)
-    # Here we simulate coordinates and use Euclidean distance for the demo
-    data['locations'] = df[['Lat', 'Lon']].values.tolist()
-    data['num_locations'] = len(data['locations'])
-    data['demands'] = df['Weight'].tolist()
-    data['time_windows'] = list(zip(df['ReadyTime'], df['DueTime']))
-    data['num_vehicles'] = business_rules['fleet_size']
-    data['depot'] = 0  # Assuming first row is the DC/Warehouse
-    data['vehicle_capacities'] = [business_rules['max_weight']] * business_rules['fleet_size']
-    return data
-
-def solve_vrptw(df, business_rules):
-    """Solves Vehicle Routing Problem with Time Windows."""
-    data = create_data_model(df, business_rules)
-    manager = pywrapcp.RoutingIndexManager(data['num_locations'], data['num_vehicles'], data['depot'])
+# --- 2. OPTIMIZATION SOLVER (OR-TOOLS) ---
+def solve_logistics_vrp(df, rules):
+    # Data preparation
+    num_locations = len(df)
+    # Depot is index 0
+    locations = df[['Lat', 'Lon']].values
+    weights = df['Weight'].tolist()
+    
+    manager = pywrapcp.RoutingIndexManager(num_locations, rules['fleet_size'], 0)
     routing = pywrapcp.RoutingModel(manager)
 
-    # 1. Distance Callback
+    # Distance Logic
     def distance_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        # Simplified distance calc
-        return int(np.hypot(data['locations'][from_node][0] - data['locations'][to_node][0],
-                            data['locations'][from_node][1] - data['locations'][to_node][1]) * 100)
+        # Haversine-lite distance calculation
+        return int(np.hypot(locations[from_node][0] - locations[to_node][0],
+                            locations[from_node][1] - locations[to_node][1]) * 100)
 
     transit_callback_index = routing.RegisterTransitCallback(distance_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-    # 2. Capacity Constraints (Weight)
-    def demand_callback(from_index):
-        node = manager.IndexToNode(from_index)
-        return data['demands'][node]
+    # Constraint: Weight Capacity
+    def weight_callback(from_index):
+        return weights[manager.IndexToNode(from_index)]
+    
+    weight_callback_index = routing.RegisterUnaryTransitCallback(weight_callback)
+    routing.AddDimensionWithVehicleCapacity(
+        weight_callback_index, 0, [rules['max_weight']] * rules['fleet_size'], True, 'Capacity'
+    )
 
-    demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
-    routing.AddDimensionWithVehicleCapacity(demand_callback_index, 0, data['vehicle_capacities'], True, 'Capacity')
+    # Constraint: Max Stops per Truck
+    # Each stop adds '1' to the counter
+    def stop_callback(from_index):
+        return 1 if manager.IndexToNode(from_index) != 0 else 0
+    
+    stop_callback_index = routing.RegisterUnaryTransitCallback(stop_callback)
+    routing.AddDimensionWithVehicleCapacity(
+        stop_callback_index, 0, [rules['max_stops']] * rules['fleet_size'], True, 'Stops'
+    )
 
-    # Solve
+    # Search Parameters
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
     
     solution = routing.SolveWithParameters(search_parameters)
     return routing, manager, solution
 
-# --- STREAMLIT UI ---
-st.set_page_config(page_title="Smart Load Builder", layout="wide")
+# --- 3. STREAMLIT UI ---
+st.set_page_config(page_title="Shipment Load Builder", layout="wide")
 
-st.title("🚛 Multi-Modal Load Optimizer")
-st.markdown("Consolidate Parcel/LTL into Multi-stop Truckloads using OR-Tools.")
+st.title("🚛 Shipment Load Builder & Mode Optimizer")
+st.markdown("Optimize multi-stop truckloads using Google OR-Tools.")
 
-# --- Sidebar Business Rules ---
+# Sidebar Configuration
 with st.sidebar:
-    st.header("Planning Constraints")
+    st.header("Planning Parameters")
     max_w = st.number_input("Max Truck Weight (Lbs)", value=45000)
-    fleet = st.slider("Available Trucks", 1, 50, 10)
-    stop_charge = st.number_input("Multi-stop Charge ($)", value=150)
+    max_s = st.slider("Max Stops per Truck", 1, 10, 5)
+    fleet_size = st.number_input("Trucks Available", value=10)
+    stop_fee = st.number_input("Stop-off Charge ($)", value=150)
     
     st.divider()
-    st.info("The engine will evaluate if Parcel < LTL < TL for every shipment.")
+    if st.button("Load Sample Dataset"):
+        # Generate dummy data centered around a Midwest Hub
+        data = {
+            'OrderID': [f"ORD-{i}" for i in range(101, 116)],
+            'Weight': [450, 12000, 8500, 50, 15000, 2200, 400, 9000, 11000, 30, 6000, 500, 150, 8000, 200],
+            'Lat': [39.0, 39.5, 40.2, 38.8, 41.5, 40.0, 39.2, 41.0, 38.5, 40.5, 39.8, 40.1, 38.2, 41.2, 39.0],
+            'Lon': [-94.0, -94.5, -93.5, -95.0, -92.0, -94.2, -93.8, -91.5, -95.5, -93.0, -94.1, -93.9, -96.0, -91.8, -94.5],
+            'Dist_to_DC': [10, 60, 110, 45, 250, 35, 25, 210, 180, 85, 40, 55, 240, 230, 15]
+        }
+        # First row is the DC (Weight 0)
+        dc = {'OrderID': 'DC-HUB', 'Weight': 0, 'Lat': 39.0, 'Lon': -94.5, 'Dist_to_DC': 0}
+        df_dc = pd.DataFrame([dc])
+        df_orders = pd.DataFrame(data)
+        st.session_state['data'] = pd.concat([df_dc, df_orders]).reset_index(drop=True)
 
-# --- Data Input ---
-col1, col2 = st.columns([1, 2])
-
-with col1:
-    st.subheader("Order Entry")
-    # Sample Data Generation
-    if st.button("Generate Sample Orders"):
-        sample_data = pd.DataFrame({
-            'OrderID': range(1, 11),
-            'Weight': [50, 4500, 12000, 300, 8000, 50, 15000, 2000, 400, 100],
-            'Lat': [39.0, 39.2, 40.1, 38.8, 41.2, 39.5, 40.5, 38.5, 41.0, 39.1],
-            'Lon': [-76.0, -76.5, -75.5, -77.0, -74.0, -76.2, -75.0, -77.5, -74.5, -76.8],
-            'ReadyTime': [0]*10,
-            'DueTime': [100]*10,
-            'Distance_From_DC': [10, 55, 120, 30, 250, 15, 180, 45, 230, 20]
-        })
-        st.session_state['df'] = sample_data
-
-if 'df' in st.session_state:
-    df = st.session_state['df']
-    st.dataframe(df, use_container_width=True)
-
-    if st.button("🚀 Run Optimization"):
-        # Step 1: Mode Shift Analysis
-        df['Parcel_Cost'] = df['Weight'].apply(RateEngine.get_parcel_rate)
-        df['LTL_Cost'] = df.apply(lambda x: RateEngine.get_ltl_rate(x['Weight'], x['Distance_From_DC']), axis=1)
-        
-        # Step 2: Optimization Call
-        rules = {'max_weight': max_w, 'fleet_size': fleet}
-        routing, manager, solution = solve_vrptw(df, rules)
-        
-        # Step 3: Visualization & Results
-        st.subheader("Optimization Results")
-        
-        # Visualization
-        fig = px.scatter_geo(df, lat='Lat', lon='Lon', size='Weight', hover_name='OrderID',
-                            title="Shipment Density Map", scope='usa')
+# Main Dashboard
+if 'data' in st.session_state:
+    df = st.session_state['data']
+    
+    col_map, col_stats = st.columns([2, 1])
+    
+    with col_map:
+        st.subheader("Order Geography")
+        fig = px.scatter_mapbox(df[1:], lat="Lat", lon="Lon", size="Weight", color="Weight",
+                              hover_name="OrderID", zoom=5, mapbox_style="carto-positron")
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Financial Summary logic
-        total_parcel_only = df['Parcel_Cost'].sum()
-        total_ltl_only = df['LTL_Cost'].sum()
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Unoptimized (LTL/Parcel)", f"${total_ltl_only:,.2f}")
-        c2.metric("Optimized Total", f"${(total_ltl_only * 0.72):,.2f}") # Simulated savings
-        c3.metric("Savings %", "28%", delta="Mode Shift Applied")
 
-        st.success("Analysis Complete: 4 Multi-stop loads built, 3 orders shifted to Parcel.")
+    if st.button("🚀 Build Optimized Loads"):
+        routing, manager, solution = solve_logistics_vrp(df, {
+            'max_weight': max_w, 'max_stops': max_s, 'fleet_size': fleet_size
+        })
+        
+        if solution:
+            loads = []
+            for vehicle_id in range(fleet_size):
+                index = routing.Start(vehicle_id)
+                while not routing.IsEnd(index):
+                    node_index = manager.IndexToNode(index)
+                    if node_index != 0: # Exclude DC from result table
+                        row = df.iloc[node_index].copy()
+                        row['Load_ID'] = f"TL-LOAD-{vehicle_id + 1}"
+                        row['Stop_Sequence'] = len([l for l in loads if l['Load_ID'] == row['Load_ID']]) + 1
+                        
+                        # Apply Mode-Shift Analysis for this specific order
+                        row['Parcel_Cost'] = LogisticsEngine.get_parcel_rate(row['Weight'])
+                        row['LTL_Cost'] = LogisticsEngine.get_ltl_rate(row['Weight'], row['Dist_to_DC'])
+                        loads.append(row)
+                    index = solution.Value(routing.NextVar(index))
+            
+            final_df = pd.DataFrame(loads)
+            
+            # --- Results Presentation ---
+            st.subheader("📦 Final Dispatch Plan")
+            
+            # 1. Summary Metrics
+            total_ltl = final_df['LTL_Cost'].sum()
+            num_loads = final_df['Load_ID'].nunique()
+            # Est. TL Cost: (Avg Distance Rate) + (Stop Fees)
+            est_tl_cost = (num_loads * 950) + (len(final_df) * stop_fee)
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Orders Processed", len(final_df))
+            m2.metric("Total Load Units", num_loads)
+            m3.metric("Estimated Savings", f"${(total_ltl - est_tl_cost):,.2f}", delta="vs Standalone LTL")
+
+            # 2. Detailed Table
+            st.dataframe(
+                final_df[['Load_ID', 'Stop_Sequence', 'OrderID', 'Weight', 'LTL_Cost', 'Parcel_Cost']], 
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # 3. Mode Shift Insight
+            st.subheader("💡 Mode Shift Recommendations")
+            parcel_shift = final_df[final_df['Parcel_Cost'] < final_df['LTL_Cost']]
+            if not parcel_shift.empty:
+                st.warning(f"Note: {len(parcel_shift)} orders are cheaper via Parcel than LTL. Consider pulling these from the Truckload.")
+                st.dataframe(parcel_shift[['OrderID', 'Weight', 'Parcel_Cost', 'LTL_Cost']])
+            
+            st.download_button("Download Load Plan", final_df.to_csv(), "load_plan.csv")
+        else:
+            st.error("Solver could not find a valid solution. Try increasing the fleet size or decreasing weight constraints.")
+else:
+    st.info("Please click 'Load Sample Dataset' in the sidebar or upload your order file to begin.")
