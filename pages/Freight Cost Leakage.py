@@ -1,4 +1,4 @@
-```python
+
 # app.py
 # ------------------------------------------------------------
 # Ground Freight Invoice Simulation (Parcel / LTL / TL) — POC
