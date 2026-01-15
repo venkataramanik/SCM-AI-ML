@@ -3,112 +3,137 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
-# --- 1. CONFIGURATION & INDUSTRY STANDARDS ---
-st.set_page_config(page_title="Global Logistics Optimizer", layout="wide")
+# --- 1. APP CONFIGURATION ---
+st.set_page_config(page_title="Logistics Optimization Engine", layout="wide")
 
-# Market Standards (Fixed for Simulation)
-FCL_40HC_RATE = 3800.00
-FCL_DRAYAGE = 450.00
-LCL_WM_RATE = 165.00
-LCL_CFS_FEE = 25.00
-CO2_KG_PER_CBM = 12.5 # Estimated ocean freight CO2 per CBM
+# --- 2. INDUSTRY STANDARD CONSTANTS ---
+FCL_40HC_RATE = 3800.00   # Standard Ocean Freight
+FCL_DRAYAGE = 450.00      # Plant to Port Trucking
+LCL_WM_RATE = 165.00      # Per Revenue Ton (W/M)
+LCL_CFS_FEE = 25.00       # Handling / Documentation
+FCL_CAPACITY_CBM = 65.0   # 90% Efficiency threshold
+FCL_MAX_KG = 20500.0      # Payload limit for road/rail
+LCL_LEAD_TIME_PENALTY = 8 # Days lost in CFS hubs
+CO2_FACTOR = 0.15         # Metric Tons CO2 per CBM saved
 
-# --- 2. DATA GENERATION (1,000 SHIPMENTS) ---
+# --- 3. DATA GENERATION ENGINE (1,000 SHIPMENTS) ---
 @st.cache_data
-def generate_1k_shipments():
+def generate_simulation_data():
     np.random.seed(42)
-    start_date = pd.to_datetime('2026-01-01')
+    start_date = datetime(2026, 1, 1)
     data = []
     for i in range(1000):
-        vol = np.random.uniform(1.5, 15.0)
-        # Weight varies: some dense (machinery), some light (electronics)
-        wgt = vol * np.random.uniform(150, 1100) 
+        vol = np.random.uniform(1.2, 14.0) # Range of LCL sizes
+        # Random density (Weight vs Volume)
+        wgt = vol * np.random.uniform(180, 1150) 
         data.append({
             'Order_ID': f'ORD-{i:04d}',
-            'Ready_Date': start_date + pd.Timedelta(days=np.random.randint(0, 90)),
-            'Vol_CBM': vol,
-            'Wgt_KG': wgt,
-            'Vol_CFT': vol * 35.31,
-            'Wgt_LB': wgt * 2.204
+            'Ready_Date': start_date + timedelta(days=np.random.randint(0, 90)),
+            'Vol_CBM': round(vol, 2),
+            'Wgt_KG': round(wgt, 2),
+            'Vol_CFT': round(vol * 35.31, 2),
+            'Wgt_LB': round(wgt * 2.204, 2)
         })
     df = pd.DataFrame(data)
-    # Revenue Ton (W/M) Calculation
+    # W/M Calculation: 1000kg = 1 CBM
     df['Rev_Ton'] = df[['Vol_CBM', 'Wgt_KG']].apply(lambda x: max(x[0], x[1]/1000), axis=1)
     df['LCL_Baseline_Cost'] = df['Rev_Ton'] * (LCL_WM_RATE + LCL_CFS_FEE)
     return df
 
-# --- 3. SENSITIVITY ANALYSIS LOGIC ---
-def run_sensitivity(df, fcl_range):
-    sensitivity_results = []
-    baseline = df['LCL_Baseline_Cost'].sum()
-    for rate in fcl_range:
-        # Simplified optimization for sensitivity
-        df['Week'] = df['Ready_Date'].dt.isocalendar().week
-        weekly = df.groupby('Week')['Vol_CBM'].sum()
-        fcl_count = (weekly // 65).sum() # 65 CBM usable
-        remaining_cbm = (weekly % 65).sum()
-        
-        opt_cost = (fcl_count * (rate + FCL_DRAYAGE)) + (remaining_cbm * (LCL_WM_RATE + LCL_CFS_FEE))
-        savings = baseline - opt_cost
-        sensitivity_results.append({'FCL_Rate': rate, 'Total_Savings': savings})
-    return pd.DataFrame(sensitivity_results)
+# --- 4. CORE OPTIMIZATION LOGIC ---
+def run_optimization(df, current_fcl_rate):
+    df['Week'] = df['Ready_Date'].dt.isocalendar().week
+    weekly_summary = df.groupby('Week').agg({
+        'Vol_CBM': 'sum',
+        'Wgt_KG': 'sum',
+        'LCL_Baseline_Cost': 'sum',
+        'Order_ID': 'count'
+    }).reset_index()
 
-# --- 4. STREAMLIT UI ---
-st.title("🚢 LCL to FCL Strategic Simulation")
-st.markdown("### 1,000 Shipment Optimization: Plant-to-Port Model")
+    # Decision: How many FCLs can we build?
+    # Logic: Uses the restrictive factor (Weight or Volume)
+    weekly_summary['FCL_Count'] = weekly_summary.apply(
+        lambda x: int(max(x['Vol_CBM'] // FCL_CAPACITY_CBM, x['Wgt_KG'] // FCL_MAX_KG)), axis=1
+    )
+    
+    weekly_summary['FCL_Total_Cost'] = weekly_summary['FCL_Count'] * (current_fcl_rate + FCL_DRAYAGE)
+    
+    # Residuals go back to LCL
+    weekly_summary['Residual_CBM'] = weekly_summary['Vol_CBM'] - (weekly_summary['FCL_Count'] * FCL_CAPACITY_CBM)
+    weekly_summary['Residual_LCL_Cost'] = weekly_summary['Residual_CBM'].apply(lambda x: max(0, x * (LCL_WM_RATE + LCL_CFS_FEE)))
+    
+    weekly_summary['Optimized_Total_Cost'] = weekly_summary['FCL_Total_Cost'] + weekly_summary['Residual_LCL_Cost']
+    weekly_summary['Savings'] = weekly_summary['LCL_Baseline_Cost'] - weekly_summary['Optimized_Total_Cost']
+    
+    return weekly_summary
 
-df = generate_1k_shipments()
+# --- 5. STREAMLIT INTERFACE ---
+st.title("📦 DC Operations: LCL-to-FCL Transformation Engine")
+st.sidebar.header("Market Variable Controls")
+live_fcl_rate = st.sidebar.slider("Market FCL Rate ($)", 2000, 8000, 3800)
 
-# Metrics Row
-col1, col2, col3, col4 = st.columns(4)
-total_lcl = df['LCL_Baseline_Cost'].sum()
-total_cbm = df['Vol_CBM'].sum()
+raw_df = generate_1k_shipments = generate_simulation_data()
+opt_df = run_optimization(raw_df, live_fcl_rate)
 
-# Optimization Run
-df['Week'] = df['Ready_Date'].dt.isocalendar().week
-weekly_agg = df.groupby('Week').agg({
-    'Vol_CBM': 'sum',
-    'Wgt_KG': 'sum',
-    'LCL_Baseline_Cost': 'sum'
-}).reset_index()
-
-weekly_agg['FCL_Target'] = (weekly_agg['Vol_CBM'] // 65).astype(int)
-weekly_agg['Residual_CBM'] = weekly_agg['Vol_CBM'] % 65
-weekly_agg['Optimized_Cost'] = (weekly_agg['FCL_Target'] * (FCL_40HC_RATE + FCL_DRAYAGE)) + (weekly_agg['Residual_CBM'] * 190)
-weekly_agg['Weekly_Savings'] = weekly_agg['LCL_Baseline_Cost'] - weekly_agg['Optimized_Cost']
-
-# Key KPI Displays
-net_savings = weekly_agg['Weekly_Savings'].sum()
-col1.metric("LCL Baseline Spend", f"${total_lcl/1e3:.1f}K")
-col2.metric("Projected Savings", f"${net_savings/1e3:.1f}K", delta=f"{(net_savings/total_lcl)*100:.1f}%")
-col3.metric("Lead Time Gain", "avg 7.4 Days", help="Bypassing CFS deconsolidation hubs.")
-col4.metric("CO2 Avoidance", f"{total_cbm * 0.15:.1f} Tons", delta="-14%", delta_color="inverse")
-
-# Main View
-tab1, tab2, tab3 = st.tabs(["Optimization Dashboard", "Sensitivity Analysis", "Raw Simulation Data"])
+# TABS FOR ORGANIZATION
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Executive Dashboard", "📈 Sensitivity Analysis", "📄 Simulation Data", "📘 Logic & User Guide"])
 
 with tab1:
-    st.subheader("Weekly Consolidation Performance")
-    fig_opt = px.bar(weekly_agg, x='Week', y=['LCL_Baseline_Cost', 'Optimized_Cost'], 
-                     barmode='group', title="Current vs. Optimized Spend by Week",
-                     color_discrete_sequence=['#E74C3C', '#2ECC71'])
-    st.plotly_chart(fig_opt, use_container_width=True)
+    # High Level Metrics
+    m1, m2, m3, m4 = st.columns(4)
+    total_savings = opt_df['Savings'].sum()
+    total_baseline = raw_df['LCL_Baseline_Cost'].sum()
     
-    
+    m1.metric("Total Baseline Spend", f"${total_baseline/1e3:.1f}K")
+    m2.metric("Projected Savings", f"${total_savings/1e3:.1f}K", delta=f"{(total_savings/total_baseline)*100:.1f}%")
+    m3.metric("Lead Time Recovery", f"{opt_df['FCL_Count'].sum() * LCL_LEAD_TIME_PENALTY} Days", help="Velocity gained by bypassing CFS")
+    m4.metric("Carbon Avoided", f"{(total_savings/3800)*2.4:.1f} Tons CO2")
+
+    # Visualizing the Spend Shift
+    fig = px.bar(opt_df, x='Week', y=['LCL_Baseline_Cost', 'Optimized_Total_Cost'], 
+                 barmode='group', title="Financial Impact: Weekly LCL vs. Strategic FCL",
+                 labels={'value': 'Cost ($)', 'variable': 'Scenario'},
+                 color_discrete_sequence=['#ff4b4b', '#00cc96'])
+    st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
-    st.subheader("FCL Price Sensitivity")
-    st.write("How much can the FCL market rate increase before LCL becomes cheaper?")
-    fcl_range = np.arange(2500, 7500, 250)
-    sens_df = run_sensitivity(df, fcl_range)
+    st.subheader("Market Rate Sensitivity Analysis")
+    st.write("Stress-testing the consolidation strategy against rising FCL costs.")
     
-    fig_sens = px.line(sens_df, x='FCL_Rate', y='Total_Savings', 
-                       title="Savings Sensitivity to FCL Market Rates",
-                       markers=True)
+    rates = np.arange(2000, 8500, 500)
+    sens_data = []
+    for r in rates:
+        temp_opt = run_optimization(raw_df, r)
+        sens_data.append({'FCL_Rate': r, 'Savings': temp_opt['Savings'].sum()})
+    
+    sens_df = pd.DataFrame(sens_data)
+    fig_sens = px.line(sens_df, x='FCL_Rate', y='Savings', markers=True, 
+                       title="Savings Decay relative to FCL Market Rate")
     fig_sens.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Break-even Point")
     st.plotly_chart(fig_sens, use_container_width=True)
 
 with tab3:
-    st.subheader("Shipment Log (First 100 Rows)")
-    st.dataframe(df.head(100), use_container_width=True)
+    st.subheader("Raw Shipment Pool (1,000 Data Points)")
+    st.dataframe(raw_df, use_container_width=True)
+
+with tab4:
+    st.header("Executive User Guide & Logic Framework")
+    
+    st.markdown("""
+    ### 1. Methodology: The 'Consolidation Engine'
+    This tool solves the **Freight Consolidation Problem** by shifting the DC from a 'Reactive' shipping model to a 'Proactive' one.
+    * **W/M Rule (Weight or Measure):** Following ocean standards, we calculate the 'Revenue Ton'. If cargo is extremely heavy ($>1,000kg/CBM$), the cost is calculated by weight.
+    * **Temporal Binning:** Shipments are 'held' at the DC for up to 7 days to find volume synergies for a specific destination port.
+    
+    ### 2. Strategic Assumptions
+    * **Utilization Safety (15%):** We assume 15% of the container is 'lost space' due to non-perfect stacking.
+    * **Lead Time Recovery:** FCL containers are sealed at the DC and go straight to the vessel. LCL shipments spend an average of **8 days** being handled, sorted, and re-stuffed at 3rd party CFS hubs.
+    
+    ### 3. Risk Management (Sensitivity)
+    The Sensitivity Analysis identifies the **Break-even Point**. If FCL rates spike due to market volatility (e.g., Red Sea disruptions), this tool identifies at exactly what price point the DC should revert to LCL to protect margins.
+    
+    ### 4. ESG & Sustainability
+    By maximizing container utilization, we reduce the total number of vehicles required for port delivery, directly lowering the Scope 3 carbon footprint of the outbound supply chain.
+    """)
