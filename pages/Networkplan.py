@@ -327,12 +327,15 @@ if st.session_state.stos is not None:
         
         st.dataframe(display_plant, use_container_width=True)
         
-        # Timeline visualization
+        # Timeline visualization - FIXED VERSION
         st.markdown("**Timeline Visualization (Sample Plant):**")
         
         sample_plant = plant_df[plant_df['plant_id'] == 'P001'].copy()
         if len(sample_plant) > 0:
             fig = go.Figure()
+            
+            # Get unique vessel cutoffs for this plant
+            vessel_cutoffs = sample_plant[['vessel_id', 'vessel_cutoff']].drop_duplicates()
             
             for idx, row in sample_plant.iterrows():
                 fig.add_trace(go.Scatter(
@@ -341,17 +344,26 @@ if st.session_state.stos is not None:
                     mode='lines+markers',
                     name=row['sto_id'],
                     line=dict(width=10),
-                    marker=dict(size=15)
+                    marker=dict(size=15),
+                    showlegend=False
                 ))
-                
-                fig.add_vline(x=row['vessel_cutoff'], line_dash="dash", 
-                             annotation_text=f"{row['vessel_id']} Cutoff")
+            
+            # Add vessel cutoff lines separately
+            for _, vrow in vessel_cutoffs.iterrows():
+                fig.add_vline(
+                    x=vrow['vessel_cutoff'], 
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"{vrow['vessel_id']} Cutoff",
+                    annotation_position="top"
+                )
             
             fig.update_layout(
                 title=f"Plant P001 (Knoxville) - Consolidation Windows",
                 xaxis_title="Date",
                 yaxis_title="STO",
-                height=400
+                height=400,
+                xaxis=dict(type='date')
             )
             st.plotly_chart(fig, use_container_width=True)
         
