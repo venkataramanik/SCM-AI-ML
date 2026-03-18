@@ -327,7 +327,7 @@ if st.session_state.stos is not None:
         
         st.dataframe(display_plant, use_container_width=True)
         
-        # Timeline visualization - FIXED VERSION
+        # Timeline visualization - FIXED VERSION WITH DATETIME CONVERSION
         st.markdown("**Timeline Visualization (Sample Plant):**")
         
         sample_plant = plant_df[plant_df['plant_id'] == 'P001'].copy()
@@ -348,10 +348,16 @@ if st.session_state.stos is not None:
                     showlegend=False
                 ))
             
-            # Add vessel cutoff lines separately
+            # Add vessel cutoff lines separately - CONVERT TO PYTHON DATETIME
             for _, vrow in vessel_cutoffs.iterrows():
+                # Convert pandas Timestamp to Python datetime
+                if hasattr(vrow['vessel_cutoff'], 'to_pydatetime'):
+                    cutoff_date = vrow['vessel_cutoff'].to_pydatetime()
+                else:
+                    cutoff_date = vrow['vessel_cutoff']
+                
                 fig.add_vline(
-                    x=vrow['vessel_cutoff'], 
+                    x=cutoff_date, 
                     line_dash="dash",
                     line_color="red",
                     annotation_text=f"{vrow['vessel_id']} Cutoff",
