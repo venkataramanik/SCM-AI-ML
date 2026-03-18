@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import random
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # Set page config
 st.set_page_config(page_title="Freight Consolidation Optimizer", layout="wide")
@@ -327,51 +324,30 @@ if st.session_state.stos is not None:
         
         st.dataframe(display_plant, use_container_width=True)
         
-        # Timeline visualization - FIXED VERSION WITH DATETIME CONVERSION
-        st.markdown("**Timeline Visualization (Sample Plant):**")
+        # Consolidation Analysis Table
+        st.markdown("**Consolidation Window Analysis (Sample Plant - Knoxville):**")
         
         sample_plant = plant_df[plant_df['plant_id'] == 'P001'].copy()
         if len(sample_plant) > 0:
-            fig = go.Figure()
-            
-            # Get unique vessel cutoffs for this plant
-            vessel_cutoffs = sample_plant[['vessel_id', 'vessel_cutoff']].drop_duplicates()
-            
+            # Create a simple text-based timeline
+            timeline_data = []
             for idx, row in sample_plant.iterrows():
-                fig.add_trace(go.Scatter(
-                    x=[row['ready_date'], row['must_ship_by']],
-                    y=[row['sto_id'], row['sto_id']],
-                    mode='lines+markers',
-                    name=row['sto_id'],
-                    line=dict(width=10),
-                    marker=dict(size=15),
-                    showlegend=False
-                ))
+                timeline_data.append({
+                    'STO': row['sto_id'],
+                    'Ready': row['ready_date'].strftime('%Y-%m-%d'),
+                    'Must Ship By': row['must_ship_by'].strftime('%Y-%m-%d'),
+                    'Vessel Cutoff': row['vessel_cutoff'].strftime('%Y-%m-%d'),
+                    'Window (days)': row['window_days'],
+                    'Vessel': row['vessel_id'],
+                    'Status': 'Can Hold' if row['window_days'] > 2 else 'Ship Soon'
+                })
             
-            # Add vessel cutoff lines separately - CONVERT TO PYTHON DATETIME
-            for _, vrow in vessel_cutoffs.iterrows():
-                # Convert pandas Timestamp to Python datetime
-                if hasattr(vrow['vessel_cutoff'], 'to_pydatetime'):
-                    cutoff_date = vrow['vessel_cutoff'].to_pydatetime()
-                else:
-                    cutoff_date = vrow['vessel_cutoff']
-                
-                fig.add_vline(
-                    x=cutoff_date, 
-                    line_dash="dash",
-                    line_color="red",
-                    annotation_text=f"{vrow['vessel_id']} Cutoff",
-                    annotation_position="top"
-                )
+            timeline_df = pd.DataFrame(timeline_data)
+            st.dataframe(timeline_df, use_container_width=True)
             
-            fig.update_layout(
-                title=f"Plant P001 (Knoxville) - Consolidation Windows",
-                xaxis_title="Date",
-                yaxis_title="STO",
-                height=400,
-                xaxis=dict(type='date')
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            # Visual bar chart using Streamlit native
+            st.markdown("**Window Days by STO:**")
+            st.bar_chart(data=sample_plant.set_index('sto_id')['window_days'])
         
         # Stage 2: Network Planning
         st.markdown("---")
