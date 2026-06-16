@@ -1,6 +1,7 @@
 import streamlit as st
 import cv2
 import numpy as np
+import os
 from PIL import Image
 
 # Initialize page settings for this specific multi-page view
@@ -12,12 +13,15 @@ st.write(
     "This module utilizes **PaddleOCR 3.0+** to parse layout structures and extract text natively in the cloud."
 )
 
-# 1. Core Engine Loader (Cleaned of all deprecated show_log / use_angle_cls parameters)
+# 1. Core Engine Loader (Forced to Dynamic Mode to prevent cloud environment runtime crashes)
 @st.cache_resource
 def load_ocr_engine():
     try:
+        # Inject the environment flag BEFORE loading PaddleOCR to override the static compiler
+        os.environ["PADDLEX_INFERENCE_MODE"] = "dynamic"
+        
         from paddleocr import PaddleOCR
-        # Stripped down to the bare essentials required by PaddleOCR 3.0+
+        # Initialize cleanly without deprecated 2.x parameter mappings
         return PaddleOCR(lang='en')
     except ImportError:
         st.error(
@@ -62,7 +66,7 @@ if uploaded_file is not None and ocr_model is not None:
         st.subheader("📊 Structured Extraction Matrix")
         
         with st.spinner("Processing deep learning layout analysis..."):
-            # Clean inference call matching the 3.0 API specifications
+            # Execute inference via the safe dynamic graph runner
             raw_ocr_results = ocr_model.ocr(img_bgr)
             
         structured_table_rows = []
