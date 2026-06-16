@@ -9,20 +9,20 @@ st.set_page_config(page_title="Invoice OCR Converter", layout="wide")
 st.title("📄 Intelligent Invoice & Document OCR Converter")
 st.write(
     "Upload a scanned invoice, receipt, or shipping document. "
-    "This module utilizes **PaddleOCR** to parse layout structures and extract text natively in the cloud."
+    "This module utilizes **PaddleOCR 3.0+** to parse layout structures and extract text natively in the cloud."
 )
 
-# 1. Core Engine Loader (Cached so it only runs once across page switches)
+# 1. Core Engine Loader (Updated parameters specifically for PaddleOCR 3.0)
 @st.cache_resource
 def load_ocr_engine():
     try:
         from paddleocr import PaddleOCR
-        # Initialize PaddleOCR: English weights, orientation angle correction enabled
-        return PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+        # Initialized for 3.0: Removed deprecated arguments to resolve namespaces validation loops
+        return PaddleOCR(lang='en', show_log=False)
     except ImportError:
         st.error(
             "Missing dependencies! Ensure you have `paddlepaddle` "
-            "and `paddleocr` active in your environment profile."
+            "and `paddleocr` active in your requirements.txt."
         )
         return None
 
