@@ -12,13 +12,13 @@ st.write(
     "This module utilizes **PaddleOCR 3.0+** to parse layout structures and extract text natively in the cloud."
 )
 
-# 1. Core Engine Loader (Updated parameters specifically for PaddleOCR 3.0)
+# 1. Core Engine Loader (Cleaned of all deprecated show_log / use_angle_cls parameters)
 @st.cache_resource
 def load_ocr_engine():
     try:
         from paddleocr import PaddleOCR
-        # Initialized for 3.0: Removed deprecated arguments to resolve namespaces validation loops
-        return PaddleOCR(lang='en', show_log=False)
+        # Stripped down to the bare essentials required by PaddleOCR 3.0+
+        return PaddleOCR(lang='en')
     except ImportError:
         st.error(
             "Missing dependencies! Ensure you have `paddlepaddle` "
@@ -62,7 +62,8 @@ if uploaded_file is not None and ocr_model is not None:
         st.subheader("📊 Structured Extraction Matrix")
         
         with st.spinner("Processing deep learning layout analysis..."):
-            raw_ocr_results = ocr_model.ocr(img_bgr, cls=True)
+            # Clean inference call matching the 3.0 API specifications
+            raw_ocr_results = ocr_model.ocr(img_bgr)
             
         structured_table_rows = []
         raw_text_blocks = []
