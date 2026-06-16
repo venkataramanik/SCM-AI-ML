@@ -1,3 +1,7 @@
+import os
+# Force dynamic inference globally across all pages before any ML engines load
+os.environ["PADDLEX_INFERENCE_MODE"] = "dynamic"
+
 import streamlit as st
 
 st.set_page_config(
